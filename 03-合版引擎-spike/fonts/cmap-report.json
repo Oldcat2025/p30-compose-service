@@ -1,0 +1,215 @@
+{
+  "generatedAt": "2026-09-05T08:11:33.014Z",
+  "fonts": [
+    {
+      "file": "BebasNeue-Regular.ttf",
+      "bytes": 61400,
+      "russianLettersCovered": 0,
+      "russianLettersTotal": 66,
+      "missingRussian": "АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯЁабвгдежзийклмнопрстуфхцчшщъыьэюяё",
+      "missingExtra": "м",
+      "hasFullRussian": false,
+      "parseNote": null
+    },
+    {
+      "file": "bebasneue__BebasNeue-Regular.ttf",
+      "bytes": 61400,
+      "russianLettersCovered": 0,
+      "russianLettersTotal": 66,
+      "missingRussian": "АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯЁабвгдежзийклмнопрстуфхцчшщъыьэюяё",
+      "missingExtra": "м",
+      "hasFullRussian": false,
+      "parseNote": null
+    },
+    {
+      "file": "GolosText-Bold.ttf",
+      "bytes": 92452,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    },
+    {
+      "file": "GolosText-ExtraBold.ttf",
+      "bytes": 94748,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    },
+    {
+      "file": "GolosText-Medium.ttf",
+      "bytes": 91332,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    },
+    {
+      "file": "GolosText-Regular.ttf",
+      "bytes": 90396,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    },
+    {
+      "file": "GolosText-SemiBold.ttf",
+      "bytes": 92352,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    },
+    {
+      "file": "golostext__GolosText[wght].ttf",
+      "bytes": 184292,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    },
+    {
+      "file": "manrope__Manrope[wght].ttf",
+      "bytes": 165420,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    },
+    {
+      "file": "Montserrat-Black.ttf",
+      "bytes": 462844,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    },
+    {
+      "file": "Montserrat-Bold.ttf",
+      "bytes": 454864,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    },
+    {
+      "file": "Montserrat-ExtraBold.ttf",
+      "bytes": 455468,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    },
+    {
+      "file": "Montserrat-Medium.ttf",
+      "bytes": 447320,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    },
+    {
+      "file": "Montserrat-Regular.ttf",
+      "bytes": 445928,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    },
+    {
+      "file": "Montserrat-SemiBold.ttf",
+      "bytes": 454716,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    },
+    {
+      "file": "montserrat__Montserrat[wght].ttf",
+      "bytes": 744936,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    },
+    {
+      "file": "Oswald-Bold.ttf",
+      "bytes": 108496,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    },
+    {
+      "file": "Oswald-Medium.ttf",
+      "bytes": 107948,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    },
+    {
+      "file": "Oswald-Regular.ttf",
+      "bytes": 105572,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    },
+    {
+      "file": "Oswald-SemiBold.ttf",
+      "bytes": 109120,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    },
+    {
+      "file": "oswald__Oswald[wght].ttf",
+      "bytes": 172088,
+      "russianLettersCovered": 66,
+      "russianLettersTotal": 66,
+      "missingRussian": "",
+      "missingExtra": "",
+      "hasFullRussian": true,
+      "parseNote": null
+    }
+  ]
+}

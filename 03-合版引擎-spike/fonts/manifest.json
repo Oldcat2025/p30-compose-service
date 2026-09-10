@@ -1,0 +1,110 @@
+{
+  "generatedAt": "2026-09-05T07:36:08.471Z",
+  "fonts": [
+    {
+      "id": "montserrat",
+      "family": "Montserrat",
+      "role": "display-titles",
+      "license": "SIL OFL 1.1",
+      "attempts": [
+        {
+          "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat%5Bwght%5D.ttf",
+          "http": 200,
+          "bytes": 744936,
+          "kind": "ttf",
+          "saved": "montserrat__Montserrat[wght].ttf"
+        }
+      ],
+      "saved": {
+        "file": "montserrat__Montserrat[wght].ttf",
+        "bytes": 744936,
+        "kind": "ttf",
+        "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat%5Bwght%5D.ttf"
+      }
+    },
+    {
+      "id": "golostext",
+      "family": "Golos Text",
+      "role": "body",
+      "license": "SIL OFL 1.1",
+      "attempts": [
+        {
+          "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/golostext/GolosText%5Bwght%5D.ttf",
+          "http": 200,
+          "bytes": 184292,
+          "kind": "ttf",
+          "saved": "golostext__GolosText[wght].ttf"
+        }
+      ],
+      "saved": {
+        "file": "golostext__GolosText[wght].ttf",
+        "bytes": 184292,
+        "kind": "ttf",
+        "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/golostext/GolosText%5Bwght%5D.ttf"
+      }
+    },
+    {
+      "id": "manrope",
+      "family": "Manrope",
+      "role": "body-alt",
+      "license": "SIL OFL 1.1",
+      "attempts": [
+        {
+          "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/manrope/Manrope%5Bwght%5D.ttf",
+          "http": 200,
+          "bytes": 165420,
+          "kind": "ttf",
+          "saved": "manrope__Manrope[wght].ttf"
+        }
+      ],
+      "saved": {
+        "file": "manrope__Manrope[wght].ttf",
+        "bytes": 165420,
+        "kind": "ttf",
+        "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/manrope/Manrope%5Bwght%5D.ttf"
+      }
+    },
+    {
+      "id": "oswald",
+      "family": "Oswald",
+      "role": "condensed-numbers",
+      "license": "SIL OFL 1.1",
+      "attempts": [
+        {
+          "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/oswald/Oswald%5Bwght%5D.ttf",
+          "http": 200,
+          "bytes": 172088,
+          "kind": "ttf",
+          "saved": "oswald__Oswald[wght].ttf"
+        }
+      ],
+      "saved": {
+        "file": "oswald__Oswald[wght].ttf",
+        "bytes": 172088,
+        "kind": "ttf",
+        "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/oswald/Oswald%5Bwght%5D.ttf"
+      }
+    },
+    {
+      "id": "bebasneue",
+      "family": "Bebas Neue",
+      "role": "hero-numbers",
+      "license": "SIL OFL 1.1",
+      "attempts": [
+        {
+          "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/bebasneue/BebasNeue-Regular.ttf",
+          "http": 200,
+          "bytes": 61400,
+          "kind": "ttf",
+          "saved": "bebasneue__BebasNeue-Regular.ttf"
+        }
+      ],
+      "saved": {
+        "file": "bebasneue__BebasNeue-Regular.ttf",
+        "bytes": 61400,
+        "kind": "ttf",
+        "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/bebasneue/BebasNeue-Regular.ttf"
+      }
+    }
+  ]
+}

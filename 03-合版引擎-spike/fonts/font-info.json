@@ -1,0 +1,174 @@
+{
+  "generatedAt": "2026-09-05T08:11:33.162Z",
+  "fonts": [
+    {
+      "file": "BebasNeue-Regular.ttf",
+      "family": "Bebas Neue",
+      "subfamily": "Regular",
+      "full": "Bebas Neue Regular",
+      "postscript": "BebasNeue-Regular"
+    },
+    {
+      "file": "bebasneue__BebasNeue-Regular.ttf",
+      "family": "Bebas Neue",
+      "subfamily": "Regular",
+      "full": "Bebas Neue Regular",
+      "postscript": "BebasNeue-Regular"
+    },
+    {
+      "file": "GolosText-Bold.ttf",
+      "family": "Golos Text",
+      "subfamily": "Bold",
+      "full": "Golos Text Bold",
+      "postscript": "GolosText-Bold"
+    },
+    {
+      "file": "GolosText-ExtraBold.ttf",
+      "family": "Golos Text ExtraBold",
+      "subfamily": "Regular",
+      "full": "Golos Text ExtraBold",
+      "postscript": "GolosText-ExtraBold",
+      "typoFamily": "Golos Text",
+      "typoSubfamily": "ExtraBold"
+    },
+    {
+      "file": "GolosText-Medium.ttf",
+      "family": "Golos Text Medium",
+      "subfamily": "Regular",
+      "full": "Golos Text Medium",
+      "postscript": "GolosText-Medium",
+      "typoFamily": "Golos Text",
+      "typoSubfamily": "Medium"
+    },
+    {
+      "file": "GolosText-Regular.ttf",
+      "family": "Golos Text",
+      "subfamily": "Regular",
+      "full": "Golos Text Regular",
+      "postscript": "GolosText-Regular"
+    },
+    {
+      "file": "GolosText-SemiBold.ttf",
+      "family": "Golos Text SemiBold",
+      "subfamily": "Regular",
+      "full": "Golos Text SemiBold",
+      "postscript": "GolosText-SemiBold",
+      "typoFamily": "Golos Text",
+      "typoSubfamily": "SemiBold"
+    },
+    {
+      "file": "golostext__GolosText[wght].ttf",
+      "family": "Golos Text",
+      "subfamily": "Regular",
+      "full": "Golos Text Regular",
+      "postscript": "GolosText-Regular"
+    },
+    {
+      "file": "manrope__Manrope[wght].ttf",
+      "family": "Manrope ExtraLight",
+      "subfamily": "Regular",
+      "full": "Manrope ExtraLight",
+      "postscript": "Manrope-ExtraLight",
+      "typoFamily": "Manrope",
+      "typoSubfamily": "ExtraLight"
+    },
+    {
+      "file": "Montserrat-Black.ttf",
+      "family": "Montserrat Black",
+      "subfamily": "Regular",
+      "full": "Montserrat Black",
+      "postscript": "Montserrat-Black",
+      "typoFamily": "Montserrat",
+      "typoSubfamily": "Black"
+    },
+    {
+      "file": "Montserrat-Bold.ttf",
+      "family": "Montserrat",
+      "subfamily": "Bold",
+      "full": "Montserrat Bold",
+      "postscript": "Montserrat-Bold"
+    },
+    {
+      "file": "Montserrat-ExtraBold.ttf",
+      "family": "Montserrat ExtraBold",
+      "subfamily": "Regular",
+      "full": "Montserrat ExtraBold",
+      "postscript": "Montserrat-ExtraBold",
+      "typoFamily": "Montserrat",
+      "typoSubfamily": "ExtraBold"
+    },
+    {
+      "file": "Montserrat-Medium.ttf",
+      "family": "Montserrat Medium",
+      "subfamily": "Regular",
+      "full": "Montserrat Medium",
+      "postscript": "Montserrat-Medium",
+      "typoFamily": "Montserrat",
+      "typoSubfamily": "Medium"
+    },
+    {
+      "file": "Montserrat-Regular.ttf",
+      "family": "Montserrat",
+      "subfamily": "Regular",
+      "full": "Montserrat Regular",
+      "postscript": "Montserrat-Regular"
+    },
+    {
+      "file": "Montserrat-SemiBold.ttf",
+      "family": "Montserrat SemiBold",
+      "subfamily": "Regular",
+      "full": "Montserrat SemiBold",
+      "postscript": "Montserrat-SemiBold",
+      "typoFamily": "Montserrat",
+      "typoSubfamily": "SemiBold"
+    },
+    {
+      "file": "montserrat__Montserrat[wght].ttf",
+      "family": "Montserrat Thin",
+      "subfamily": "Regular",
+      "full": "Montserrat Thin",
+      "postscript": "Montserrat-Thin",
+      "typoFamily": "Montserrat",
+      "typoSubfamily": "Thin"
+    },
+    {
+      "file": "Oswald-Bold.ttf",
+      "family": "Oswald",
+      "subfamily": "Bold",
+      "full": "Oswald Bold",
+      "postscript": "Oswald-Bold"
+    },
+    {
+      "file": "Oswald-Medium.ttf",
+      "family": "Oswald Medium",
+      "subfamily": "Regular",
+      "full": "Oswald Medium",
+      "postscript": "Oswald-Medium",
+      "typoFamily": "Oswald",
+      "typoSubfamily": "Medium"
+    },
+    {
+      "file": "Oswald-Regular.ttf",
+      "family": "Oswald",
+      "subfamily": "Regular",
+      "full": "Oswald Regular",
+      "postscript": "Oswald-Regular"
+    },
+    {
+      "file": "Oswald-SemiBold.ttf",
+      "family": "Oswald SemiBold",
+      "subfamily": "Regular",
+      "full": "Oswald SemiBold",
+      "postscript": "Oswald-SemiBold",
+      "typoFamily": "Oswald",
+      "typoSubfamily": "SemiBold"
+    },
+    {
+      "file": "oswald__Oswald[wght].ttf",
+      "family": "Oswald",
+      "subfamily": "Regular",
+      "full": "Oswald Regular",
+      "postscript": "Oswald-Regular"
+    }
+  ]
+}

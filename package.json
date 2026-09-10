@@ -1,0 +1,15 @@
+{
+  "name": "p30-compose-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "项目30 Ozon 俄区 AI 合版引擎服务（M1-B1）",
+  "main": "11-合版引擎服务-M1B1/compose-service.js",
+  "scripts": {
+    "start": "node 11-合版引擎服务-M1B1/compose-service.js"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "1.0.3",
+    "ag-psd": "31.0.2",
+    "opentype.js": "1.3.4"
+  }
+}
