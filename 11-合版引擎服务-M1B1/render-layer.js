@@ -423,7 +423,31 @@ async function renderShot(body, deps) {
     const cols = Math.min(2, params.length);
     const rows = Math.ceil(params.length / cols);
     const cw = Math.round(contentW * 0.42);
-    const ch = rows * Math.round(H * 0.052) + Math.round(H * 0.02);
+    const kpx0 = Math.round(W * 0.0245), vpx = Math.round(W * 0.035);
+    const cellW0 = Math.floor(cw / cols);
+    const kMax = Math.round(cellW0 - W * 0.03);
+    const vMax = Math.round(cellW0 - W * 0.03);
+    /* ★★ 2026-09-22 修（老猫实测：D1 参数块标签被砍成「Номинальная входная мо」）：
+       原码对 key 做 `slice(0, 22)`、对 value 做 `slice(0, 24)` —— **硬截断**，
+       俄文参数名稍长就断尾（"Номинальная входная мощность" 正好 28 字符）。
+       改为：先缩字号（下限 60%），仍放不下才按词折行；行数变化时自动撑开行高。 */
+    const _fitKey = function (t, q) { return measure(t, q, "600", "ZernoBody") <= kMax; };
+    const keyFit = params.map(function (p) {
+      const raw = String(p.key || "");
+      let px = kpx0;
+      if (_fitKey(raw, px)) return { lines: [raw], px: px };
+      while (px > Math.round(kpx0 * 0.6) && !_fitKey(raw, px)) px -= 1;
+      if (_fitKey(raw, px)) return { lines: [raw], px: px };
+      const words = raw.split(/\s+/).filter(Boolean);
+      const mid = Math.ceil(words.length / 2);
+      let a = words.slice(0, mid).join(" "), b = words.slice(mid).join(" ");
+      while (a && a.indexOf(" ") > 0 && !_fitKey(a, px)) a = a.slice(0, a.lastIndexOf(" "));
+      while (b && b.indexOf(" ") > 0 && !_fitKey(b, px)) b = b.slice(0, b.lastIndexOf(" "));
+      return { lines: b ? [a, b] : [a || raw], px: px };
+    });
+    const _kRows = Math.max.apply(null, keyFit.map(function (k) { return k.lines.length; }));
+    const rowPx = (_kRows > 1) ? Math.round(H * 0.070) : Math.round(H * 0.052);
+    const ch = rows * rowPx + Math.round(H * 0.02);
     const cx = W - pad - cw;
     const _bRows = bullets.length;
     const cy = bullets.length ? (H - pad - Math.max(ch, _bRows * Math.round(H * 0.045) + Math.round(H * 0.024))) : (H - pad - ch);
@@ -432,25 +456,31 @@ async function renderShot(body, deps) {
     roundRect(ctx, cx, cy, cw, ch, Math.round(W * 0.012));
     ctx.fill();
     ctx.restore();
-    const kpx = Math.round(W * 0.0245), vpx = Math.round(W * 0.035);
     params.forEach((p, i) => {
       const r = Math.floor(i / cols), c2 = i % cols;
       const cellW = Math.floor(cw / cols);
       const x = cx + c2 * cellW + Math.round(W * 0.025);
-      const y = cy + Math.round(H * 0.012) + r * Math.round(H * 0.052);
+      const y = cy + Math.round(H * 0.012) + r * rowPx;
+      const fit = keyFit[i] || { lines: [String(p.key || "")], px: kpx0 };
       ctx.save();
       ctx.textBaseline = "top";
-      ctx.font = "600 " + kpx + 'px "ZernoBody", sans-serif';
       ctx.fillStyle = "rgba(255,255,255,0.72)";
-      const kt = String(p.key || "").slice(0, 22);
-      ctx.fillText(kt, x, y, Math.round(cellW - W * 0.03));
-      ctx.font = "800 " + vpx + 'px "ZernoBodyBold", sans-serif';
+      for (let li = 0; li < fit.lines.length; li++) {
+        ctx.font = "600 " + fit.px + 'px "ZernoBody", sans-serif';
+        ctx.fillText(fit.lines[li], x, y + li * Math.round(fit.px * 1.25), vMax);
+      }
+      /* 值：同样不硬截断 —— 超宽先缩字号（下限 60%），实测过「600W」被切这类问题 */
+      const rawV = String(p.value == null ? "" : p.value);
+      let vq = vpx;
+      while (vq > Math.round(vpx * 0.6) && measure(rawV, vq, "800", "ZernoBodyBold") > vMax) vq -= 1;
+      ctx.font = "800 " + vq + 'px "ZernoBodyBold", sans-serif';
       ctx.fillStyle = "#FFFFFF";
-      const vt = String(p.value == null ? "" : p.value).slice(0, 24);
-      ctx.fillText(vt, x, y + Math.round(kpx * 1.35), Math.round(cellW - W * 0.03));
+      const vTop = y + fit.lines.length * Math.round(fit.px * 1.25) + Math.round(fit.px * 0.10);
+      ctx.fillText(rawV, x, vTop, vMax);
       ctx.restore();
-      elements.push({ kind: "param", index: i, x: x, y: y, key: kt, value: vt });
-      if (measure(vt, vpx, "800", "ZernoBodyBold") > cellW - W * 0.03) overflow.push({ element: "param[" + i + "]", reason: "value 超宽", value: vt });
+      const kt = fit.lines.join(" ");
+      elements.push({ kind: "param", index: i, x: x, y: y, key: kt, value: rawV });
+      if (measure(rawV, vq, "800", "ZernoBodyBold") > vMax) overflow.push({ element: "param[" + i + "]", reason: "value 缩到 " + vq + "px 仍超宽", value: rawV });
     });
   }
 
