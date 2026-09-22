@@ -469,6 +469,285 @@ function pump() {
   }
 }
 
+// ---- LOGO 后处理贴图（决策 D-3：禁止 AI 重绘，生成后精确贴图）----
+// 几何来源：09-M0-合版样图/compose/sections-robot/s4.js 的 g.bolt（闪电多边形 + ZERNO 字标）
+// 自然尺寸 160×40（宽 160 = 18 多边形 + 30 间距 + 130 字标 → 4:1），按画布宽百分比等比缩放
+const ZERNO_GEOM = {
+  pts: [[9, 0], [0, 22], [7, 22], [4, 40], [18, 15], [10, 15]],
+  boltW: 18,          // 闪电多边形横向占位
+  gap: 10,            // 闪电 → 字标的安全间距（原模板 textDx=30 仅留 12px，视觉上会粘连）
+  textDy: 8,          // 字标相对闪电顶部的下移（让字标与闪电视觉重心对齐）
+  textH: 30,          // 字标字号（自然尺度）
+  naturalW: 160,      // 自然总宽 = boltW 18 + gap 10 + 字标 130 ≈ 158，取整 160
+};
+
+function requireCanvas() {
+  const cands = [
+    "@napi-rs/canvas",
+    "/app/node_modules/@napi-rs/canvas",
+    path.join(__dirname, "node_modules", "@napi-rs", "canvas"),
+    "D:/N8NProjects/25 电商详情页面批量套版生成/engine/node_modules/@napi-rs/canvas",
+  ];
+  for (const c of cands) { try { return require(c); } catch (e) { /* next */ } }
+  throw new Error("CANVAS_LIB_NOT_FOUND");
+}
+
+function fontsDirPath() {
+  const cands = [
+    path.join(__dirname, "..", "03-合版引擎-spike", "fonts"),
+    "/app/03-合版引擎-spike/fonts",
+    "D:/N8NProjects/30 Ozon俄区AI工作流系统/03-合版引擎-spike/fonts",
+  ];
+  for (const c of cands) { if (fs.existsSync(c)) return c; }
+  return null;
+}
+
+function fetchBuffer(u) {
+  return new Promise((resolve, reject) => {
+    const mod = u.startsWith("https:") ? require("https") : require("http");
+    mod.get(u, (r) => {
+      if (r.statusCode >= 300 && r.statusCode < 400 && r.headers.location) {
+        return fetchBuffer(new URL(r.headers.location, u).toString()).then(resolve, reject);
+      }
+      if (r.statusCode !== 200) return reject(new Error("HTTP " + r.statusCode + " for " + u));
+      const chunks = [];
+      r.on("data", (c) => chunks.push(c));
+      r.on("end", () => resolve(Buffer.concat(chunks)));
+    }).on("error", reject);
+  });
+}
+
+// ---- M2 渲染层：生图与排版解耦（确定性文字/LOGO 叠加）----
+// 设计见 01 项目设计与开发文档/项目30-M2-生图与排版解耦-技术设计-v1.0.md
+let _renderLayer = null;
+function renderLayer() {
+  if (!_renderLayer) {
+    try { _renderLayer = require(path.join(__dirname, "render-layer.js")); }
+    catch (e) { _renderLayer = require("./render-layer"); }
+  }
+  return _renderLayer;
+}
+
+/** 在给定图像上精确贴 ZERNO LOGO；返回输出路径与实测几何 */
+async function logoOverlay(body) {
+  const cv = requireCanvas();
+  if (!global.__zernoFontReg) {
+    const fd = fontsDirPath();
+    if (fd) {
+      try { cv.GlobalFonts.registerFromPath(path.join(fd, "Montserrat-Black.ttf"), "ZernoDisplay"); } catch (e) { /* 用兜底字体族 */ }
+    }
+    global.__zernoFontReg = true;
+  }
+  const logo = Object.assign({ widthPct: 13.5, yPct: 4, anchor: "top-center", color: "auto" }, body.logo || {});
+  let buf = null;
+  if (body.imageBase64) buf = Buffer.from(String(body.imageBase64).replace(/^data:[^,]+,/, ""), "base64");
+  else if (body.imageUrl) {
+    const u = String(body.imageUrl);
+    buf = /^https?:/i.test(u) ? await fetchBuffer(u) : fs.readFileSync(u);
+  } else throw new Error("imageUrl or imageBase64 required");
+
+  const src = await cv.loadImage(buf);
+  const W = src.width, H = src.height;
+  const canvas = cv.createCanvas(W, H);
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(src, 0, 0, W, H);
+
+  // ---- 品牌安全区预处理：抹掉 AI 可能自己画的 LOGO，避免「双 LOGO/重影」----
+  // 做法：把安全区降采样到极小再放大回去（等价强模糊）——消除细节、保留底色/光照，不依赖模型听话
+  let clearedSafeArea = false;
+  let safeAreaMode = "off";
+  let safeAreaHeightPct = 0;
+  if (body.safeAreaClear !== false) {
+    // 抹平带高度：只需覆盖 LOGO 自身占位（默认 y 4% + LOGO 高约 3.5%）+ 余量，
+    // 取 max(10%, logo 底部 + 2%) —— 设太大（曾用 16%）会误伤模型排在 ~14% 处的主标题
+    // 闪电多边形纵向占位（pts 的 y 最大值为 40）——ZERNO_GEOM 里没有 naturalH 字段，勿臆造
+    const _boltNaturalH = 40;
+    const _targetWpx = (Number(logo.widthPct) / 100) * W;   // 目标 LOGO 宽（px）
+    const _scale = _targetWpx / ZERNO_GEOM.naturalW;        // 缩放系数（无量纲）= 目标宽 ÷ 自然宽
+    const _logoBottomPct = Number(logo.yPct) + (_boltNaturalH * _scale * 100) / H;
+    // 最小可行带高：只需盖住 LOGO 自身（约 y 4%→6.5%）+ 0.7% 余量。
+    // 曾用 10%/16% → 模型把主标题排在 ~8% 处时会被误切。
+    // overlay 模式：抹平区必须贴住 LOGO 自身占位（下限 6.8%），否则误切标题；
+    // bar 模式：品牌栏是"新增"的、不占画面，故可放心加高到 12% 以彻底清掉模型自画的 logo。
+    const _minPct = (body.layout === 'bar') ? 12 : 6.8;
+    safeAreaHeightPct = Math.round(Math.max(_minPct, _logoBottomPct + 0.3) * 10) / 10;
+    const cw = W, chh = Math.round(H * (safeAreaHeightPct / 100));
+    if (cw > 2 && chh > 2) {
+      safeAreaMode = (body.safeAreaMode === "blur") ? "blur" : "gradient";
+      if (safeAreaMode === "blur") {
+        // 强模糊（降采样再放大）：痕迹较明显，仅在需要时启用
+        const kx = Math.max(1, Math.round(cw / 40)), ky = Math.max(1, Math.round(chh / 40));
+        const tiny = cv.createCanvas(kx, ky);
+        tiny.getContext("2d").drawImage(canvas, 0, 0, cw, chh, 0, 0, kx, ky);
+        ctx.imageSmoothingEnabled = true;
+        if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(tiny, 0, 0, kx, ky, 0, 0, cw, chh);
+      } else {
+        // 默认：采样横带自上而下 5 段的平均色，做纵向渐变填充
+        // —— 抹掉 LOGO/泄漏文字等一切细节，同时保留该区原有的色调渐进，看不出接缝
+        let stops = null;
+        try {
+          const data = ctx.getImageData(0, 0, cw, chh).data;
+          const SEG = 5;
+          stops = [];
+          for (let s = 0; s < SEG; s++) {
+            const y0 = Math.floor((chh * s) / SEG), y1 = Math.floor((chh * (s + 1)) / SEG);
+            let r = 0, g = 0, b = 0, n = 0;
+            for (let y = y0; y < y1; y++) {
+              for (let x = 0; x < cw; x += 4) {
+                const i = (y * cw + x) * 4;
+                r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+              }
+            }
+            if (n) stops.push("rgb(" + Math.round(r / n) + "," + Math.round(g / n) + "," + Math.round(b / n) + ")");
+          }
+        } catch (e) { stops = null; }
+        if (stops && stops.length) {
+          const grad = ctx.createLinearGradient(0, 0, 0, chh);
+          for (let s = 0; s < stops.length; s++) grad.addColorStop(s / (stops.length - 1), stops[s]);
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, cw, chh);
+        }
+      }
+      clearedSafeArea = true;
+    }
+  }
+
+  // ================= 方案 B：品牌栏（letterbox）=================
+  // 背景：模型每次都把大标题排到画面最顶部（实测无视"标题须在某百分比以下"的提示词指令），
+  // 覆盖式抹平必然周期性误切标题。改为「顶部新增一条品牌栏 + 画面等比缩小下移」，
+  // 结构上保证不遮任何内容，输出尺寸不变（仍为原画布尺寸）。
+  let barLayout = false;
+  if (body.layout === 'bar') {
+    const barH = Math.max(24, Math.round(H * (Number(body.barHeightPct) || 6) / 100));
+    const innerW = W, innerH = H - barH;
+    const sc = Math.min(innerW / W, innerH / H);
+    const dw = Math.round(W * sc), dh = Math.round(H * sc);
+    const dx = Math.round((W - dw) / 2), dy = barH + Math.round((innerH - dh) / 2);
+    // 用源图顶部几行平均色做整幅底色，避免留白突兀
+    let baseCol = 'rgb(255,255,255)';
+    try {
+      const dd = ctx.getImageData(0, 0, W, Math.max(1, Math.round(H * 0.02))).data;
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let i = 0; i < dd.length; i += 16) { r += dd[i]; g += dd[i + 1]; b += dd[i + 2]; n++; }
+      if (n) baseCol = 'rgb(' + Math.round(r / n) + ',' + Math.round(g / n) + ',' + Math.round(b / n) + ')';
+    } catch (e) {}
+    ctx.fillStyle = baseCol;
+    ctx.fillRect(0, 0, W, H);
+    // 画面等比缩小后下移
+    ctx.imageSmoothingEnabled = true;
+    if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+    // 必须从源图 src 重绘（不能 drawImage(canvas,...) —— 那是把 canvas 画到自己身上，
+    // 而上面的底色填充已把画面盖掉，结果输出纯色块）
+    ctx.drawImage(src, dx, dy, dw, dh);
+    // ⚠️ 关键顺序：上面从 src 重绘会覆盖掉先前对 canvas 做的抹平，
+    // 所以 bar 模式必须在「重绘之后」对内嵌区域重新抹平一次（覆盖模型自画 logo 的落点）。
+    try {
+      const chh2 = Math.max(2, Math.round(dh * 0.115));
+      const dd2 = ctx.getImageData(dx, dy, dw, chh2).data;
+      const SEG2 = 5, st2 = [];
+      for (let s = 0; s < SEG2; s++) {
+        const y0 = Math.floor((chh2 * s) / SEG2), y1 = Math.floor((chh2 * (s + 1)) / SEG2);
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let y = y0; y < y1; y++) {
+          for (let x = 0; x < dw; x += 4) {
+            const i = (y * dw + x) * 4; r += dd2[i]; g += dd2[i + 1]; b += dd2[i + 2]; n++;
+          }
+        }
+        if (n) st2.push('rgb(' + Math.round(r / n) + ',' + Math.round(g / n) + ',' + Math.round(b / n) + ')');
+      }
+      if (st2.length) {
+        const g3 = ctx.createLinearGradient(0, dy, 0, dy + chh2);
+        for (let s = 0; s < st2.length; s++) g3.addColorStop(s / (st2.length - 1), st2[s]);
+        ctx.fillStyle = g3;
+        ctx.fillRect(dx, dy, dw, chh2);
+      }
+      clearedSafeArea = true;
+    } catch (e) {}
+
+    // 品牌栏渐变（采样自画面顶部 5 段的色调）
+    try {
+      const src = ctx.getImageData(dx, dy, dw, Math.max(1, Math.round(dh * 0.06))).data;
+      const SEG = 5, stops = [];
+      for (let s = 0; s < SEG; s++) {
+        const x0 = Math.floor((dw * s) / SEG), x1 = Math.floor((dw * (s + 1)) / SEG);
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let y = 0; y < Math.round(dh * 0.06); y += 2) {
+          for (let x = x0; x < x1; x += 3) {
+            const i = (y * dw + x) * 4; r += src[i]; g += src[i + 1]; b += src[i + 2]; n++;
+          }
+        }
+        if (n) stops.push('rgb(' + Math.round(r / n) + ',' + Math.round(g / n) + ',' + Math.round(b / n) + ')');
+      }
+      if (stops.length) {
+        const g2 = ctx.createLinearGradient(0, 0, W, barH);
+        for (let s = 0; s < stops.length; s++) g2.addColorStop(s / (stops.length - 1), stops[s]);
+        ctx.fillStyle = g2; ctx.fillRect(0, 0, W, barH);
+      }
+    } catch (e) {}
+    barLayout = true;
+  }
+
+  const lw = (W * Number(logo.widthPct)) / 100;
+  const s = lw / ZERNO_GEOM.naturalW;
+  const lx = logo.anchor === "top-center" ? (W - lw) / 2 : (Number(logo.xPct || 0) / 100) * W;
+  const ly = (H * Number(logo.yPct)) / 100;
+
+  // 背景自适应配色：采样 LOGO 区域平均亮度决定用白还是深色，避免浅底白字看不清
+  let drawColor = logo.color;
+  let sampledLum = null;
+  if (!drawColor || drawColor === "auto") {
+    const boxW = Math.max(1, Math.round(lw));
+    const boxH = Math.max(1, Math.round((ZERNO_GEOM.textDy + ZERNO_GEOM.textH) * s));
+    const bx = Math.max(0, Math.min(W - boxW, Math.round(lx)));
+    const by = Math.max(0, Math.min(H - boxH, Math.round(ly)));
+    let lum = 0;
+    try {
+      const px = ctx.getImageData(bx, by, boxW, boxH).data;
+      let n = 0, sum = 0;
+      for (let i = 0; i < px.length; i += 4) { sum += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]; n++; }
+      lum = n ? sum / n / 255 : 0;
+    } catch (e) { lum = 0; }
+    drawColor = lum > 0.62 ? "#111111" : "#FFFFFF";
+    sampledLum = Math.round(lum * 1000) / 1000;
+  }
+
+  ctx.save();
+  ctx.fillStyle = drawColor;
+  ctx.beginPath();
+  ZERNO_GEOM.pts.forEach(([px, py], i) => {
+    const X = lx + px * s, Y = ly + py * s;
+    if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y);
+  });
+  ctx.closePath();
+  ctx.fill();
+  ctx.font = Math.round(ZERNO_GEOM.textH * s) + 'px "ZernoDisplay", sans-serif';
+  ctx.textBaseline = "top";
+  ctx.fillText("ZERNO", lx + (ZERNO_GEOM.boltW + ZERNO_GEOM.gap) * s, ly + ZERNO_GEOM.textDy * s);
+  ctx.restore();
+
+  const jpg = await canvas.encode("jpeg", 92);   // @napi-rs/canvas 的 encode() 返回 Promise，必须 await
+  const outDir = path.join(OUTPUT_ROOT, safeName(String(body.taskId || ("logo_" + Date.now()))));
+  fs.mkdirSync(outDir, { recursive: true });
+  const outPath = path.join(outDir, safeName(String(body.shotCode || "shot")) + "-logo.jpg");
+  fs.writeFileSync(outPath, jpg);
+  // C5 管线用：需要把合成结果作为字节回传（下游要 binary），并按「稳/结果保留」原则容错
+  const resp = {
+    ok: true, status: "done",
+    srcWidth: W, srcHeight: H,
+    logoWidthPx: Math.round(lw), logoX: Math.round(lx), logoY: Math.round(ly),
+    logoWidthPct: Number(logo.widthPct), logoYPct: Number(logo.yPct),
+    logoScale: Math.round(s * 1000) / 1000,
+    clearedSafeArea: clearedSafeArea, safeAreaMode: safeAreaMode, layout: barLayout ? 'bar' : 'overlay',
+    safeAreaHeightPct: safeAreaHeightPct,
+    logoColor: drawColor, bgLuminance: sampledLum,
+    boltWidthPx: Math.round(ZERNO_GEOM.boltW * s), gapPx: Math.round(ZERNO_GEOM.gap * s),
+    path: outPath, bytes: jpg.length,
+  };
+  if (body.returnBase64 === true) resp.imageBase64 = "data:image/jpeg;base64," + jpg.toString("base64");
+  return resp;
+}
+
 // ---- 路由 ----
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
@@ -556,8 +835,44 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (req.method === "POST" && url.pathname === "/v1/logo-overlay") {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch (e) {
+      return json(res, 400, { ok: false, status: "failed", error: { code: "BAD_REQUEST", message: "invalid json body: " + e.message, httpStatus: 400, retryable: false } });
+    }
+    try {
+      const r = await logoOverlay(body);
+      return json(res, 200, r);
+    } catch (e) {
+      return json(res, 500, { ok: false, status: "failed", error: { code: "LOGO_OVERLAY_ERROR", message: String((e && e.message) || e), httpStatus: 500, retryable: true } });
+    }
+  }
+
+  // ---- M2：渲染层端点（把数据确定性叠到「零文字」背景图上）----
+  if (req.method === "POST" && url.pathname === "/v1/render-shot") {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch (e) {
+      return json(res, 400, { ok: false, status: "failed", error: { code: "BAD_REQUEST", message: "invalid json body: " + e.message, httpStatus: 400, retryable: false } });
+    }
+    try {
+      const r = await renderLayer().renderShot(body, {
+        requireCanvas: requireCanvas,
+        fetchBuffer: fetchBuffer,
+        outputRoot: function () { return OUTPUT_ROOT; },
+        safeName: safeName,
+      });
+      return json(res, 200, r);
+    } catch (e) {
+      return json(res, 500, { ok: false, status: "failed", error: { code: "RENDER_SHOT_ERROR", message: String((e && e.message) || e), httpStatus: 500, retryable: true } });
+    }
+  }
+
   if (url.pathname === "/") {
-    return json(res, 200, { ok: true, service: "p30-compose-engine", version: "0.1.0", endpoints: ["POST /v1/compose", "GET /v1/health", "GET /v1/templates"] });
+    return json(res, 200, { ok: true, service: "p30-compose-engine", version: "0.2.0", endpoints: ["POST /v1/compose", "POST /v1/logo-overlay", "POST /v1/render-shot", "GET /v1/health", "GET /v1/templates"] });
   }
 
   return json(res, 404, { ok: false, status: "failed", error: { code: "NOT_FOUND", message: "no route " + url.pathname, httpStatus: 404, retryable: false } });

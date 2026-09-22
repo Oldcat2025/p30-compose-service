@@ -25,6 +25,6 @@ EXPOSE 8200
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "require('http').get('http://127.0.0.1:8200/v1/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+  CMD node -e "require('http').get({host:'127.0.0.1',port:8200,path:'/v1/health',headers:{'X-Compose-Key':process.env.COMPOSE_KEY||''}},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 
 CMD ["node", "11-合版引擎服务-M1B1/compose-service.js"]
