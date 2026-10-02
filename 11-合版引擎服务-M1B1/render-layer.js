@@ -27,6 +27,7 @@ function layouts() {
   return _layouts;
 }
 const LAYOUT_BODY = {
+  "D1-v1": function (c) { return layouts().drawD1(c); },
   "D2-v1": function (c) { return layouts().drawD2(c); },
   "D3-v1": function (c) { return layouts().drawD3(c); },
   "D4-v1": function (c) { return layouts().drawD4(c); },
@@ -92,41 +93,11 @@ function lum(c) { return (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) / 255; }
  * 文字自动换行 + 自动缩字号；返回 { lines, fontPx }
  * overflow 时返回实际用的最小字号并标记 overflowed
  */
-function fitText(ctx, text, maxW, maxLines, startPx, minPx, family, weight) {
-  const words = String(text || "").split(/\s+/).filter(Boolean);
-  for (let px = startPx; px >= minPx; px -= 2) {
-    ctx.font = (weight ? weight + " " : "") + px + "px \"" + family + "\", sans-serif";
-    const lines = [];
-    let cur = "";
-    for (const w of words) {
-      const t = cur ? cur + " " + w : w;
-      if (ctx.measureText(t).width <= maxW) { cur = t; }
-      else { if (cur) lines.push(cur); cur = w; }
-    }
-    if (cur) lines.push(cur);
-    // 单词太长需硬切
-    // ⚠️ 硬切会从单词中间断开（实测出现 ["АККУМУЛЯТОРА","Я","ГАЗОНОКОСИЛКА"] 这种残词）。
-    // 所以记录是否发生过硬切：只要还能缩字号，就宁可缩字号也不拆词（拆词只作为最后手段）。
-    let hardSplit = false;
-    const fixed = [];
-    for (const ln of lines) {
-      if (ctx.measureText(ln).width <= maxW) { fixed.push(ln); continue; }
-      hardSplit = true;
-      let seg = "";
-      for (const ch of ln) {
-        if (ctx.measureText(seg + ch).width <= maxW) seg += ch;
-        else { fixed.push(seg); seg = ch; }
-      }
-      if (seg) fixed.push(seg);
-    }
-    // 未拆词且行数达标 → 采用；拆过词则继续缩字号（除非已到最小字号）
-    if (fixed.length <= maxLines && !hardSplit) return { lines: fixed, fontPx: px, overflowed: false };
-    if (px === minPx || px - 2 < minPx) return { lines: fixed.slice(0, maxLines), fontPx: px, overflowed: hardSplit };
-  }
-  return { lines: [], fontPx: minPx, overflowed: true };
+function fitText(ctx,text,maxW,maxLines,startPx,minPx,family,weight) {
+  const f=layouts().fitInline({measure:(t,px)=>{ctx.font=(weight||'800')+' '+px+'px "'+family+'",sans-serif';return ctx.measureText(t).width;}},text,maxW,maxLines,startPx,family);
+  return {lines:f.lines.slice(0,maxLines),fontPx:startPx,overflowed:f.overflowed};
 }
 
-/** 画 ZERNO LOGO（闪电 + 字标）；color 为 'auto' 时按底色亮度自适应 */
 function drawZernoLogo(ctx, x, y, w, color, bgLumVal) {
   const s = w / ZERNO_GEOM.naturalW;
   let drawColor = color;
@@ -216,7 +187,7 @@ async function renderShot(body, deps) {
   if (body.backgroundBase64) buf = Buffer.from(String(body.backgroundBase64).replace(/^data:[^,]+,/, ""), "base64");
   else if (body.backgroundUrl) {
     const u = String(body.backgroundUrl);
-    buf = /^https?:/i.test(u) ? await deps.fetchBuffer(u) : fs.readFileSync(u);
+    buf = await deps.fetchBuffer(u);
   } else throw new Error("backgroundUrl or backgroundBase64 required");
 
   const src = await cv.loadImage(buf);
@@ -243,7 +214,7 @@ async function renderShot(body, deps) {
   };
 
   // ---- 1) 品牌栏（letterbox：新增条带，画面等比缩小下移 → 永不遮挡内容）----
-  const barH = Math.round(H * (Number(body.barHeightPct) || 6) / 100);
+  const barH = body.shotCode === 'D2' ? 0 : Math.round(H * .06);
   const innerH = H - barH;
   const sc = Math.min(W / src.width, innerH / src.height);
   const dw = Math.round(src.width * sc), dh = Math.round(src.height * sc);
@@ -275,37 +246,16 @@ async function renderShot(body, deps) {
   ctx.fillRect(0, 0, W, barH);
   elements.push({ kind: "brandBar", x: 0, y: 0, w: W, h: barH, color: stops.join(" → ") });
 
-  // ---- 2) LOGO（栏内居中）----
-  const brand = d.brand || {};
-  const logoW = W * (Number(brand.logoWidthPct) || 13.5) / 100;
-  const lx = Math.round((W - logoW) / 2);
-  const barBg = avgColor(ctx, 0, 0, W, barH, 8);
-  let lh = logoW * (ZERNO_GEOM.naturalH / ZERNO_GEOM.naturalW);
-  let ly = Math.round((barH - lh) / 2);
-  let logoSource = "vector";
-  let logoColor = null;
-  let logoErr = null;
-  const logoUrl = brand.logoUrl ? String(brand.logoUrl) : "";
-  if (logoUrl) {
-    try {
-      const lbuf = /^https?:/i.test(logoUrl) ? await deps.fetchBuffer(logoUrl) : fs.readFileSync(logoUrl);
-      const logoImg = await cv.loadImage(lbuf);
-      lh = Math.round(logoW * (logoImg.height / logoImg.width));
-      ly = Math.round((barH - lh) / 2);
-      ctx.drawImage(logoImg, lx, ly, Math.round(logoW), lh);
-      logoSource = "image";
-      logoColor = "image";
-    } catch (e) {
-      logoErr = String((e && e.message) || e).slice(0, 140);
-    }
+  // D2 has no logo. Other slots require the supplied original brand artwork.
+  if (body.shotCode !== 'D2') {
+    const brand=d.brand||{};
+    if(!brand.logoUrl) throw Error('Original logo artwork required');
+    const logoImg=await cv.loadImage(await deps.fetchBuffer(String(brand.logoUrl)));
+    const logoW=Math.min(W*.135,barH*.80*(logoImg.width/logoImg.height));
+    const logoH=logoW*logoImg.height/logoImg.width;
+    ctx.drawImage(logoImg,(W-logoW)/2,H*.04-logoH/2,logoW,logoH);
+    elements.push({kind:'logo',x:(W-logoW)/2,y:H*.04-logoH/2,w:logoW,h:logoH,source:'original_image'});
   }
-  if (logoSource !== "image") {
-    lh = logoW * (ZERNO_GEOM.naturalH / ZERNO_GEOM.naturalW);
-    ly = Math.round((barH - lh) / 2);
-    logoColor = drawZernoLogo(ctx, lx, ly, logoW, brand.color || "auto", lum(barBg));
-  }
-  elements.push({ kind: "logo", x: lx, y: ly, w: Math.round(logoW), h: Math.round(lh),
-                  color: logoColor, source: logoSource, logoUrl: logoUrl, logoError: logoErr });
 
   // ---- 3) 字号基准 ----
   const pad = Math.round(W * 0.05);
@@ -316,7 +266,7 @@ async function renderShot(body, deps) {
   // ---- 4) 主标题（画面内顶部）----
   let cursorY = textTop;
   if (d.title) {
-    const f = fitText(ctx, d.title, contentW, 3, Math.round(W * 0.085), Math.round(W * 0.042), "ZernoHead");
+    const f = fitText(ctx, d.title, contentW, 2, Math.round(W * 0.06), Math.round(W * 0.06), "ZernoHead");
     const lh2 = Math.round(f.fontPx * 1.16);
     const boxH = lh2 * f.lines.length + Math.round(W * 0.03);
     // 半透明衬底提升可读性
@@ -344,7 +294,8 @@ async function renderShot(body, deps) {
 
   // 副标题（最多 2 行；不足则自动缩字号，2 行仍放不下才报 overflow）
   // 修：原先 maxLines=1 且只画 lines[0]，长副标题会被右边缘硬截断（实测丢半句）
-  if (d.subtitle) {
+  if (d.subtitle) overflow.push({element:'subtitle',reason:'当前五图规则不使用第三层文字'});
+  if (false) {
     const f = fitText(ctx, d.subtitle, contentW, 2, Math.round(W * 0.045), Math.round(W * 0.026), "ZernoBodyBold");
     const slh = Math.round(f.fontPx * 1.28);
     ctx.save();
@@ -360,133 +311,20 @@ async function renderShot(body, deps) {
     cursorY += slh * f.lines.length + Math.round(H * 0.01);
   }
 
-  // ---- 5) 卖点列表（左下，白色半透明卡片）----
-  const bullets = Array.isArray(d.bullets) ? d.bullets : [];
-  if (bullets.length && !customLayout) {
-    const bp = Math.round(W * 0.05);
-    let by = H - pad - bullets.length * Math.round(H * 0.045);
-    const cardTop = by - Math.round(H * 0.012);
-    const cardH = bullets.length * Math.round(H * 0.045) + Math.round(H * 0.024);
-    const bw = Math.round(contentW * 0.56);
-    ctx.save();
-    // ★ 2026-09-18（老猫指出）：原白底 rgba(255,255,255,0.90) 配冰面/雪白背景**完全不突出**。
-    // 2026-09-18 二次调整：深绿黑改「深色高级灰 rgba(92,97,104,0.80)」+ 略降不透明度 ——
-    // 原方案太深、把背景完全压住了（老猫反馈）。灰调更克制，82% 让背景透出一点，白字对比仍 ~10:1。
-    ctx.fillStyle = "rgba(92,97,104,0.80)";
-    roundRect(ctx, bp, cardTop, bw, cardH, Math.round(W * 0.012));
-    ctx.fill();
-    ctx.restore();
-    // 自适应字号：逐级缩小直到最长卖点能放进卡片（避免"文字溢出卡片"）
-    const innerW = bw - Math.round(W * 0.075);
-    let fpx = Math.round(W * 0.032);
-    const _measure = (t, px) => { ctx.save(); ctx.font = "700 " + px + 'px "ZernoBodyBold", sans-serif'; const w = ctx.measureText(t).width; ctx.restore(); return w; };
-    while (fpx > Math.round(W * 0.020) && bullets.some((b) => _measure(clipBullet(b.text || b, 52), fpx) > innerW)) fpx -= 1;
-    // 再按「实际像素宽度」裁剪：固定字符数在等宽差异大的语言（西里尔/中文）下仍会溢出卡片。
-    // 二分找能连同省略号一起放下的最长前缀，按词边界收尾 → 保证永不溢出卡片。
-    const clipTo = (t) => {
-      const s = String(t == null ? "" : t).replace(/\s+/g, " ").trim();
-      if (!s) return "";
-      if (_measure(s, fpx) <= innerW) return s;
-      let lo = 1, hi = s.length, best = 1;
-      while (lo <= hi) {
-        const mid = (lo + hi) >> 1;
-        if (_measure(s.slice(0, mid) + "…", fpx) <= innerW) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
-      }
-      const cut = s.slice(0, best);
-      const sp = cut.lastIndexOf(" ");
-      return (sp > best * 0.5 ? cut.slice(0, sp) : cut).replace(/[\s,;:.\-]+$/, "") + "…";
-    };
-    ctx.save();
-    ctx.font = "700 " + fpx + 'px "ZernoBodyBold", sans-serif';
-    ctx.textBaseline = "top";
-    ctx.fillStyle = "#111111";
-    bullets.forEach((b, i) => {
-      const t = clipTo(b.text || b);
-      const yy = by + i * Math.round(H * 0.045);
-      ctx.fillStyle = "#6EE7A0";   // 深底上必须用亮色圆点（原 #0F7B2F 深绿在深底上几乎看不见）
-      ctx.beginPath();
-      ctx.arc(bp + Math.round(W * 0.028), yy + fpx / 2, Math.round(W * 0.010), 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#FFFFFF";
-      ctx.fillText(t, bp + Math.round(W * 0.05), yy);
-      elements.push({ kind: "bullet", index: i, x: bp + Math.round(W * 0.05), y: yy, text: t });
-    });
-    ctx.restore();
-    // 越界检查
-    const over = bullets.filter((b) => measure(clipTo(b.text || b), fpx, "700", "ZernoBodyBold") > innerW);
-    if (over.length) overflow.push({ element: "bullets", reason: over.length + " 条缩到 " + fpx + "px 仍超出卡片宽度" });
-  }
-
-  // ---- 6) 参数条（右下，深色卡片 + key/value 成对渲染，杜绝 key/value 错配）----
-  const params = Array.isArray(d.params) ? d.params : [];
-  if (params.length && !customLayout) {
-    const cols = Math.min(2, params.length);
-    const rows = Math.ceil(params.length / cols);
-    const cw = Math.round(contentW * 0.42);
-    const kpx0 = Math.round(W * 0.0245), vpx = Math.round(W * 0.035);
-    const cellW0 = Math.floor(cw / cols);
-    const kMax = Math.round(cellW0 - W * 0.03);
-    const vMax = Math.round(cellW0 - W * 0.03);
-    /* ★★ 2026-09-22 修（老猫实测：D1 参数块标签被砍成「Номинальная входная мо」）：
-       原码对 key 做 `slice(0, 22)`、对 value 做 `slice(0, 24)` —— **硬截断**，
-       俄文参数名稍长就断尾（"Номинальная входная мощность" 正好 28 字符）。
-       改为：先缩字号（下限 60%），仍放不下才按词折行；行数变化时自动撑开行高。 */
-    const _fitKey = function (t, q) { return measure(t, q, "600", "ZernoBody") <= kMax; };
-    const keyFit = params.map(function (p) {
-      const raw = String(p.key || "");
-      let px = kpx0;
-      if (_fitKey(raw, px)) return { lines: [raw], px: px };
-      while (px > Math.round(kpx0 * 0.6) && !_fitKey(raw, px)) px -= 1;
-      if (_fitKey(raw, px)) return { lines: [raw], px: px };
-      const words = raw.split(/\s+/).filter(Boolean);
-      const mid = Math.ceil(words.length / 2);
-      let a = words.slice(0, mid).join(" "), b = words.slice(mid).join(" ");
-      while (a && a.indexOf(" ") > 0 && !_fitKey(a, px)) a = a.slice(0, a.lastIndexOf(" "));
-      while (b && b.indexOf(" ") > 0 && !_fitKey(b, px)) b = b.slice(0, b.lastIndexOf(" "));
-      return { lines: b ? [a, b] : [a || raw], px: px };
-    });
-    const _kRows = Math.max.apply(null, keyFit.map(function (k) { return k.lines.length; }));
-    const rowPx = (_kRows > 1) ? Math.round(H * 0.070) : Math.round(H * 0.052);
-    const ch = rows * rowPx + Math.round(H * 0.02);
-    const cx = W - pad - cw;
-    const _bRows = bullets.length;
-    const cy = bullets.length ? (H - pad - Math.max(ch, _bRows * Math.round(H * 0.045) + Math.round(H * 0.024))) : (H - pad - ch);
-    ctx.save();
-    ctx.fillStyle = "rgba(92,97,104,0.80)";
-    roundRect(ctx, cx, cy, cw, ch, Math.round(W * 0.012));
-    ctx.fill();
-    ctx.restore();
-    params.forEach((p, i) => {
-      const r = Math.floor(i / cols), c2 = i % cols;
-      const cellW = Math.floor(cw / cols);
-      const x = cx + c2 * cellW + Math.round(W * 0.025);
-      const y = cy + Math.round(H * 0.012) + r * rowPx;
-      const fit = keyFit[i] || { lines: [String(p.key || "")], px: kpx0 };
-      ctx.save();
-      ctx.textBaseline = "top";
-      ctx.fillStyle = "rgba(255,255,255,0.72)";
-      for (let li = 0; li < fit.lines.length; li++) {
-        ctx.font = "600 " + fit.px + 'px "ZernoBody", sans-serif';
-        ctx.fillText(fit.lines[li], x, y + li * Math.round(fit.px * 1.25), vMax);
-      }
-      /* 值：同样不硬截断 —— 超宽先缩字号（下限 60%），实测过「600W」被切这类问题 */
-      const rawV = String(p.value == null ? "" : p.value);
-      let vq = vpx;
-      while (vq > Math.round(vpx * 0.6) && measure(rawV, vq, "800", "ZernoBodyBold") > vMax) vq -= 1;
-      ctx.font = "800 " + vq + 'px "ZernoBodyBold", sans-serif';
-      ctx.fillStyle = "#FFFFFF";
-      const vTop = y + fit.lines.length * Math.round(fit.px * 1.25) + Math.round(fit.px * 0.10);
-      ctx.fillText(rawV, x, vTop, vMax);
-      ctx.restore();
-      const kt = fit.lines.join(" ");
-      elements.push({ kind: "param", index: i, x: x, y: y, key: kt, value: rawV });
-      if (measure(rawV, vq, "800", "ZernoBodyBold") > vMax) overflow.push({ element: "param[" + i + "]", reason: "value 缩到 " + vq + "px 仍超宽", value: rawV });
-    });
-  }
-
+  if (!customLayout && ((d.bullets||[]).length || (d.params||[]).length)) overflow.push({element:'D1',reason:'D1仅允许主标题与原始LOGO'});
   // ---- 6.5) 自定义图位版式（D2–D5）----
+  let detailSource=null;
+  if(body.shotCode==='D5') {
+    const product= d.productReferenceUrl ? await cv.loadImage(await deps.fetchBuffer(d.productReferenceUrl)) : src;
+    const top=layouts().bodyTop({cursorY,dy,dh,H}),x=pad+contentW*.45+W*.025,w=W-pad-x,h=H-pad-top;
+    const scale=Math.min(w/product.width,h/product.height),pw=product.width*scale,ph=product.height*scale;
+    ctx.save();ctx.fillStyle='#F2F5F3';ctx.fillRect(0,top,W,H-top);
+    ctx.drawImage(product,x+(w-pw)/2,top+(h-ph)/2,pw,ph);ctx.restore();
+    elements.push({kind:'productReference',x:x+(w-pw)/2,y:top+(h-ph)/2,w:pw,h:ph,source:'reference_image'});
+  }
+  if(body.shotCode==='D2') {if(!d.detailSourceUrl)throw Error('真实细节参考图缺失');detailSource=await cv.loadImage(await deps.fetchBuffer(d.detailSourceUrl));}
   if (customLayout) {
-    LAYOUT_BODY[layoutName]({ ctx: ctx, W: W, H: H, pad: pad, contentW: contentW, kitAccent: kitAccent, dy: dy, dh: dh, cursorY: cursorY, d: d, elements: elements, overflow: overflow, measure: measure, roundRect: roundRect, subject: subject });
+    LAYOUT_BODY[layoutName]({ ctx: ctx, W: W, H: H, pad: pad, contentW: contentW, kitAccent: kitAccent, dy: dy, dh: dh, cursorY: cursorY, d: d, elements: elements, overflow: overflow, measure: measure, roundRect: roundRect, subject: subject, detailSource: detailSource });
   }
 
   // ---- 7) 输出 ----

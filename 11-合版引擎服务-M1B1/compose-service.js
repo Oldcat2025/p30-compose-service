@@ -850,6 +850,17 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // 最终文件检查：真实下载/解码/指纹，不按调用方声明推导尺寸。
+  if (req.method === 'POST' && url.pathname === '/v1/inspect-image') {
+    try {
+      const body = JSON.parse(await readBody(req, 15 * 1024 * 1024));
+      const result = await require('./image-inspection').inspectImage(body, {requireCanvas});
+      return json(res, 200, result);
+    } catch (e) {
+      return json(res, 422, {ok:false,decodable:false,error:{code:'IMAGE_INVALID',message:String(e.message || e)}});
+    }
+  }
+
   // ---- M2：渲染层端点（把数据确定性叠到「零文字」背景图上）----
   if (req.method === "POST" && url.pathname === "/v1/render-shot") {
     let body;
@@ -861,7 +872,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const r = await renderLayer().renderShot(body, {
         requireCanvas: requireCanvas,
-        fetchBuffer: fetchBuffer,
+        fetchBuffer: require('./image-inspection').readImage,
         outputRoot: function () { return OUTPUT_ROOT; },
         safeName: safeName,
       });
