@@ -27,4 +27,9 @@ EXPOSE 8200
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "require('http').get({host:'127.0.0.1',port:8200,path:'/v1/health',headers:{'X-Compose-Key':process.env.COMPOSE_KEY||''}},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 
+# ★ 2026-10-06（审查 D4）：容器不再以 root 运行。用镜像自带的 node 用户（uid 1000），
+#   并把 /app（含 output 目录，合版产物写这里）chown 给它，否则非 root 无法写 output。
+RUN mkdir -p /app/output && chown -R node:node /app
+USER node
+
 CMD ["node", "11-合版引擎服务-M1B1/compose-service.js"]

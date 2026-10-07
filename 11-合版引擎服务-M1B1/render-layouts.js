@@ -13,7 +13,7 @@ function fitInline(c,t,maxW,maxLines,startPx,fam){
 function bodyTop(c){return Math.max(c.cursorY+c.H*.022,c.dy+c.dh*.15);}
 function nudgeBlock(c,y){return y;} // Layouts reserve fixed text regions; never move text over another text region.
 function color(c){return /^#[0-9a-f]{6}$/i.test(c.kitAccent||'')?c.kitAccent:'#245842';}
-function card(c,x,y,w,h,fill){c.ctx.save();c.ctx.fillStyle=fill;c.roundRect(c.ctx,x,y,w,h,c.W*.012);c.ctx.fill();c.ctx.restore();}
+function card(c,x,y,w,h,fill){h=Math.max(0,h);w=Math.max(0,w);if(!w||!h)return;c.ctx.save();c.ctx.fillStyle=fill;c.roundRect(c.ctx,x,y,w,h,c.W*.012);c.ctx.fill();c.ctx.restore();}
 function label(c,text,x,y,w,h,kind,index,fill='#fff',px=c.W*.032){
  const f=fitInline(c,text,w,Math.floor(h/(px*1.2)),Math.round(px),'ZernoBodyBold');
  if(f.overflowed)c.overflow.push({element:kind+'['+index+']',reason:'文案过长；请精简文案，禁止缩字或截断'});
@@ -27,7 +27,7 @@ function drawD1(c){
  const items=bullets(c),params=(c.d.params||[]).map(p=>String(p.key||'')+' '+String(p.value||'')).filter(x=>x.trim());
  if(items.length<RULES.D1.min||items.length>RULES.D1.max)c.overflow.push({element:'D1',reason:'主图需1至3条短卖点，有真实参数时展示一个参数模块'});
  const gap=c.W*.025,left=c.contentW*.56,right=c.contentW-left-gap,rowH=c.H*.08,top=c.H-c.pad-Math.max(items.length,params.length)*rowH;
- card(c,c.pad,top,left,items.length*rowH-c.H*.009,'rgba(55,59,63,.76)');
+ if(items.length)card(c,c.pad,top,left,items.length*rowH-c.H*.009,'rgba(55,59,63,.76)');
  items.forEach((t,i)=>{const y=top+i*rowH;label(c,t,c.pad+c.W*.018,y+c.H*.012,left-c.W*.036,rowH-c.H*.018,'heroFeature',i);});
  const x=c.pad+left+gap;
  if(params.length)card(c,x,top,right,params.length*rowH-c.H*.009,'rgba(55,59,63,.93)');

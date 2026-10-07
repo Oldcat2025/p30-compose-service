@@ -50,6 +50,24 @@ const inFlight = new Map(); // key -> Promise
 const MAX_CONCURRENT = parseInt(process.env.COMPOSE_MAX_CONCURRENT || "2", 10);
 let activeRenders = 0;
 const renderQueue = [];
+/* ★ 2026-10-06（审查 E1）：画布/图片尺寸上限。与 image-inspection.js 的 7680 同款 ——
+   原来 /v1/render-shot 与 /v1/logo-overlay 对 canvas.width/height 零校验，
+   `{canvas:{width:100000,height:100000}}` 会在 native 层直接 OOM 杀掉整个进程。 */
+const MAX_DIM = 7680;
+/* ★ 2026-10-06（审查 E2）：外呼取图的上限与白名单（防 SSRF / 超大文件 / 重定向环）。
+   与 image-inspection.js 的 MAX_BYTES / ALLOWED_HOSTS 对齐，另允许显式追加 .alicdn.com。 */
+const FETCH_MAX_BYTES = 10 * 1024 * 1024;
+const FETCH_MAX_REDIRECTS = 3;
+const FETCH_TIMEOUT_MS = 20000;
+const FETCH_ALLOWED_HOSTS = new Set([
+  "catait-images-photo-factory.oss-cn-hangzhou.aliyuncs.com",
+  "ozon.zeabur.app",
+]);
+/* ★ 2026-10-06（审查 E4）：幂等缓存/产物/临时图的保留期与清理。
+   原实现只写不删 —— _photos 临时图与 output 产物（每单数 MB~数十 MB）永不清理，磁盘必满。 */
+const IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;         // 幂等缓存保留 10 分钟（与命中窗口一致）
+const OUTPUT_RETENTION_MS = 24 * 60 * 60 * 1000;   // 产物保留 24 小时
+const PHOTO_RETENTION_MS = 60 * 60 * 1000;         // _photos 临时图保留 1 小时
 
 // ---- 小工具 ----
 function json(res, status, obj) {
@@ -132,7 +150,7 @@ function deepMerge(base, override) {
  * photoLayers: [{ id, source: { type:"url"|"base64", url? , data?, mediaType? }, fit? }]
  * 返回 { id → localPath }，并收集告警（下载失败等）
  */
-async function resolvePhotoLayers(photoLayers, workDir, warnings) {
+async function resolvePhotoLayers(photoLayers, workDir, warnings, strict) {
   const resolved = {};
   if (!Array.isArray(photoLayers) || photoLayers.length === 0) return resolved;
   if (!fs.existsSync(workDir)) fs.mkdirSync(workDir, { recursive: true });
@@ -185,18 +203,31 @@ async function resolvePhotoLayers(photoLayers, workDir, warnings) {
         message: String(e.message || e),
         detail: { id, sourceType: src.type },
       });
+      // ★ 2026-10-06（审查 E5）：strictPhoto=true 时不再静默回退默认产品档案的照片
+      //   （否则生成图里是别的商品，保真风险），改为直接失败让调用方处理。
+      if (strict) throw new Error("照片下载失败（strictPhoto=true，不静默回退默认图）: " + id + " — " + String(e.message || e));
       // 不致命：保留默认产品档案的该照片（占位兜底）
     }
   }
   return resolved;
 }
 
-/** 下载 URL → Buffer（超时 + 大小上限） */
-function fetchUrlBuffer(url, timeoutMs = 20000, maxBytes = 30 * 1024 * 1024) {
+/** 下载 URL → Buffer（超时 + 大小上限 + 重定向跟随） */
+function fetchUrlBuffer(url, timeoutMs = 20000, maxBytes = 30 * 1024 * 1024, depth = 0) {
   return new Promise((resolve, reject) => {
     const lib = String(url).startsWith("https") ? require("https") : require("http");
     const req = lib.get(url, { timeout: timeoutMs }, (res) => {
-      if (res.statusCode && res.statusCode >= 400) {
+      /* ★ 2026-10-06（审查 E5）：原来只拦 >=400，3xx 会被当成功读进 body ——
+         图床 302 到 HTML 页时，就把 HTML 当 .jpg 写盘（伪图片，下游解码失败）。
+         现在：3xx 带 Location → 跟随（≤3 跳）；3xx 无 Location → 报错；最终必须 2xx。 */
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        if (depth >= 3) { reject(new Error("too many redirects for " + url)); return; }
+        let next;
+        try { next = new URL(res.headers.location, url).toString(); } catch (_) { reject(new Error("bad redirect for " + url)); return; }
+        return fetchUrlBuffer(next, timeoutMs, maxBytes, depth + 1).then(resolve, reject);
+      }
+      if (res.statusCode && res.statusCode >= 300) {
         reject(new Error("HTTP " + res.statusCode + " for " + url));
         res.resume();
         return;
@@ -356,7 +387,7 @@ async function adaptRequest(body) {
       "_photos",
       safeName(body.taskId || "task") + "_" + Date.now(),
     );
-    const resolved = await resolvePhotoLayers(body.photoLayers, workDir, warnings);
+    const resolved = await resolvePhotoLayers(body.photoLayers, workDir, warnings, body.strictPhoto === true);
     product.photos = Object.assign({}, product.photos, resolved);
   }
 
@@ -387,6 +418,18 @@ async function adaptRequest(body) {
 }
 
 // ---- 真正渲染一单（供幂等/并发调度） ----
+/** 由实际像素宽高推算最接近的常见比例串（审查 E5：报告 ratio 用生效值，不用请求回显值） */
+function ratioOf(w, h) {
+  w = Number(w) || 0; h = Number(h) || 0;
+  if (!w || !h) return null;
+  const r = w / h;
+  const CAND = [["1:1", 1], ["3:4", 3 / 4], ["4:3", 4 / 3], ["4:5", 4 / 5], ["9:16", 9 / 16], ["16:9", 16 / 9], ["2:3", 2 / 3]];
+  let best = CAND[0], bd = Infinity;
+  for (const [name, val] of CAND) { const d = Math.abs(r - val); if (d < bd) { bd = d; best = [name, val]; } }
+  // 长图（远超所有常见比例）如实给像素比
+  if (bd > 0.25) return w + ":" + h;
+  return best[0];
+}
 async function doCompose(body) {
   const t0 = Date.now();
   const { template, product, warnings: adaptWarnings } = await adaptRequest(body);
@@ -441,7 +484,9 @@ async function doCompose(body) {
     idempotencyKey: body.idempotencyKey || null,
     status: warnings.length ? "succeeded_with_warnings" : "succeeded",
     specId,
-    canvas: { ratio: body.canvas && body.canvas.ratio ? body.canvas.ratio : (stage.W / stage.H < 1 ? "3:4" : "1:1"), width: stage.W, height: stage.H },
+    /* ★ 2026-10-06（审查 E5）：ratio 原样回显请求值，但引擎实际恒 900 宽（长图），
+       回显值与生效值不符（报告字段=回显非生效值）。改为按实际 stage 尺寸算。 */
+    canvas: { ratio: ratioOf(stage.W, stage.H), requested_ratio: (body.canvas && body.canvas.ratio) || null, width: stage.W, height: stage.H },
     outputs,
     warnings,
     metrics: { renderMs: Date.now() - t0, size: stats.size, texts: stats.texts, images: stats.images, overflow: stats.overflow },
@@ -449,17 +494,23 @@ async function doCompose(body) {
 }
 
 // ---- 并发调度（限制 canvas 内存峰值） ----
-function scheduleCompose(body) {
+// ★ 2026-10-06（审查 E1）：原来只有 /v1/compose 走这个队列，logo-overlay / render-shot 直接执行，
+//   大画布请求可绕过并发上限 → native 层 OOM 杀进程。现改成通用任务队列，三个重端点统一排队。
+function scheduleRender(fn) {
   return new Promise((resolve, reject) => {
-    renderQueue.push({ body, resolve, reject });
+    renderQueue.push({ fn, resolve, reject });
     pump();
   });
+}
+function scheduleCompose(body) {
+  return scheduleRender(() => doCompose(body));
 }
 function pump() {
   while (activeRenders < MAX_CONCURRENT && renderQueue.length > 0) {
     const job = renderQueue.shift();
     activeRenders++;
-    doCompose(job.body)
+    Promise.resolve()
+      .then(() => job.fn())
       .then((r) => job.resolve(r))
       .catch((e) => job.reject(e))
       .finally(() => {
@@ -467,6 +518,41 @@ function pump() {
         pump();
       });
   }
+  if (activeRenders === 0 && renderQueue.length === 0) maybeSweep();
+}
+
+/* ★ 2026-10-06（审查 E4）：惰性清理 —— 队列空闲时最多每 10 分钟跑一次：
+   ① 过期幂等缓存；② _photos 临时图（按目录 mtime）；③ output 产物（按目录 mtime）。 */
+let _lastSweep = 0;
+function sweepDir(dir, maxAgeMs) {
+  let removed = 0;
+  try {
+    if (!fs.existsSync(dir)) return 0;
+    const now = Date.now();
+    for (const name of fs.readdirSync(dir)) {
+      const p = path.join(dir, name);
+      try {
+        const st = fs.statSync(p);
+        if (now - st.mtimeMs > maxAgeMs) {
+          if (st.isDirectory()) fs.rmSync(p, { recursive: true, force: true });
+          else fs.unlinkSync(p);
+          removed++;
+        }
+      } catch (_) { /* 单个条目失败不影响整体 */ }
+    }
+  } catch (_) { /* 目录不存在/权限问题忽略 */ }
+  return removed;
+}
+function maybeSweep() {
+  const now = Date.now();
+  if (now - _lastSweep < 10 * 60 * 1000) return;
+  _lastSweep = now;
+  // 幂等缓存过期
+  let c = 0;
+  for (const [k, v] of idempotencyCache) { if (now - v.at > IDEMPOTENCY_TTL_MS) { idempotencyCache.delete(k); c++; } }
+  const ph = sweepDir(path.join(OUTPUT_ROOT, "_photos"), PHOTO_RETENTION_MS);
+  const out = sweepDir(OUTPUT_ROOT, OUTPUT_RETENTION_MS);
+  if (c || ph || out) console.log("[sweep] idempotency=%d photos=%d outputs=%d", c, ph, out);
 }
 
 // ---- LOGO 后处理贴图（决策 D-3：禁止 AI 重绘，生成后精确贴图）----
@@ -502,18 +588,41 @@ function fontsDirPath() {
   return null;
 }
 
-function fetchBuffer(u) {
+function fetchBuffer(u, depth) {
+  depth = depth || 0;
   return new Promise((resolve, reject) => {
-    const mod = u.startsWith("https:") ? require("https") : require("http");
-    mod.get(u, (r) => {
+    /* ★ 2026-10-06（审查 E2）：原来这里无超时、无大小上限、3xx 递归无深度限制、也不校验 host
+       → SSRF（可拉内网地址 / 云元数据 / 超大文件拖垮内存）。
+       现在：host 白名单 + 重定向深度上限 + 超时 + 大小上限。 */
+    let parsed;
+    try { parsed = new URL(String(u)); } catch (_) { return reject(new Error("invalid image url: " + String(u).slice(0, 80))); }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return reject(new Error("unsupported protocol: " + parsed.protocol));
+    if (parsed.username || parsed.password) return reject(new Error("credentials in url not allowed"));
+    const host = parsed.hostname;
+    if (!(FETCH_ALLOWED_HOSTS.has(host) || host.endsWith(".alicdn.com")))
+      return reject(new Error("image host is not allowed: " + host));
+    if (depth > FETCH_MAX_REDIRECTS) return reject(new Error("too many redirects"));
+
+    const mod = parsed.protocol === "https:" ? require("https") : require("http");
+    const req = mod.get(parsed, { timeout: FETCH_TIMEOUT_MS }, (r) => {
       if (r.statusCode >= 300 && r.statusCode < 400 && r.headers.location) {
-        return fetchBuffer(new URL(r.headers.location, u).toString()).then(resolve, reject);
+        r.resume();   // 释放上游响应，避免 socket 泄漏
+        let next;
+        try { next = new URL(r.headers.location, u).toString(); } catch (_) { return reject(new Error("bad redirect location")); }
+        return fetchBuffer(next, depth + 1).then(resolve, reject);
       }
-      if (r.statusCode !== 200) return reject(new Error("HTTP " + r.statusCode + " for " + u));
-      const chunks = [];
-      r.on("data", (c) => chunks.push(c));
+      if (r.statusCode !== 200) { r.resume(); return reject(new Error("HTTP " + r.statusCode + " for " + host)); }
+      let bytes = 0; const chunks = [];
+      r.on("data", (c) => {
+        bytes += c.length;
+        if (bytes > FETCH_MAX_BYTES) { req.destroy(new Error("image exceeds " + (FETCH_MAX_BYTES / 1048576) + " MB")); return; }
+        chunks.push(c);
+      });
       r.on("end", () => resolve(Buffer.concat(chunks)));
-    }).on("error", reject);
+      r.on("error", reject);
+    });
+    req.on("timeout", () => req.destroy(new Error("image fetch timeout")));
+    req.on("error", reject);
   });
 }
 
@@ -548,6 +657,9 @@ async function logoOverlay(body) {
 
   const src = await cv.loadImage(buf);
   const W = src.width, H = src.height;
+  /* ★ 2026-10-06（审查 E1）：图片尺寸上限，防 native 层 OOM。 */
+  if (!(W > 0) || !(H > 0) || W > MAX_DIM || H > MAX_DIM)
+    throw new Error("image dimensions out of range: " + W + "x" + H + " (max " + MAX_DIM + ")");
   const canvas = cv.createCanvas(W, H);
   const ctx = canvas.getContext("2d");
   ctx.drawImage(src, 0, 0, W, H);
@@ -802,7 +914,12 @@ const server = http.createServer(async (req, res) => {
       // 幂等键可选但推荐；无 key 时按 taskId 做近似幂等
     }
 
-    const key = body.idempotencyKey || "k_" + (body.taskId || crypto.randomBytes(8).toString("hex"));
+    /* ★ 2026-10-06（审查 E3）：原来无 idempotencyKey 时 key = "k_" + taskId ——
+       同一个 taskId 改了 payload 再发（比如改文案/换图），10 分钟内会**返回旧缓存产物**且标 succeeded（假成功）。
+       现在把请求体哈希并进 key：同 taskId 改内容 → 不同 key → 重渲染；
+       同 taskId 同内容（真正的重试）→ 同 key → 命中缓存，幂等语义保留。 */
+    const _bodyHash = crypto.createHash("sha1").update(JSON.stringify(body || {})).digest("hex").slice(0, 16);
+    const key = body.idempotencyKey || ("k_" + (body.taskId || crypto.randomBytes(8).toString("hex")) + "_" + _bodyHash);
     const now = Date.now();
     const cached = idempotencyCache.get(key);
     if (cached && now - cached.at < 10 * 60 * 1000) {
@@ -843,7 +960,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 400, { ok: false, status: "failed", error: { code: "BAD_REQUEST", message: "invalid json body: " + e.message, httpStatus: 400, retryable: false } });
     }
     try {
-      const r = await logoOverlay(body);
+      const r = await scheduleRender(() => logoOverlay(body));
       return json(res, 200, r);
     } catch (e) {
       return json(res, 500, { ok: false, status: "failed", error: { code: "LOGO_OVERLAY_ERROR", message: String((e && e.message) || e), httpStatus: 500, retryable: true } });
@@ -870,12 +987,12 @@ const server = http.createServer(async (req, res) => {
       return json(res, 400, { ok: false, status: "failed", error: { code: "BAD_REQUEST", message: "invalid json body: " + e.message, httpStatus: 400, retryable: false } });
     }
     try {
-      const r = await renderLayer().renderShot(body, {
+      const r = await scheduleRender(() => renderLayer().renderShot(body, {
         requireCanvas: requireCanvas,
         fetchBuffer: require('./image-inspection').readImage,
         outputRoot: function () { return OUTPUT_ROOT; },
         safeName: safeName,
-      });
+      }));
       return json(res, 200, r);
     } catch (e) {
       return json(res, 500, { ok: false, status: "failed", error: { code: "RENDER_SHOT_ERROR", message: String((e && e.message) || e), httpStatus: 500, retryable: true } });

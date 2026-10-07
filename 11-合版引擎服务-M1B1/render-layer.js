@@ -193,6 +193,12 @@ async function renderShot(body, deps) {
   const src = await cv.loadImage(buf);
   const W = Number((body.canvas || {}).width) || 1200;
   const H = Number((body.canvas || {}).height) || 1600;
+  /* ★ 2026-10-06（审查 E1）：画布尺寸上限。原来对 body.canvas.width/height 零校验，
+     `{canvas:{width:100000,height:100000}}` 会在 native 层直接 OOM 杀掉整个进程。
+     上限与 image-inspection.js 的 7680 对齐。 */
+  const MAX_DIM = 7680;
+  if (!(W > 0) || !(H > 0) || W > MAX_DIM || H > MAX_DIM)
+    throw new Error("canvas dimensions out of range: " + W + "x" + H + " (max " + MAX_DIM + ")");
   const canvas = cv.createCanvas(W, H);
   const ctx = canvas.getContext("2d");
   const d = body.data || {};
