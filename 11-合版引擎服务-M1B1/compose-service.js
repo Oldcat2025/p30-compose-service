@@ -61,8 +61,15 @@ const FETCH_MAX_REDIRECTS = 3;
 const FETCH_TIMEOUT_MS = 20000;
 const FETCH_ALLOWED_HOSTS = new Set([
   "catait-images-photo-factory.oss-cn-hangzhou.aliyuncs.com",
+  "catait-images-us-west-1.oss-us-west-1.aliyuncs.com",   // ★ 2026-10-08：07 迁美西后的新桶
   "ozon.zeabur.app",
 ]);
+/* ★ 2026-10-08（同一类 bug 的第二处）：桶迁到美西后本白名单没跟着改 → 新桶的图取不到。
+   除了补具体桶名，再加一条**按后缀**的兜底：任何 *.aliyuncs.com（我们自己的 OSS 桶）都放行，
+   下次再迁桶不会再炸。安全约束不变：https/443、无凭据、大小上限、超时、重定向上限。 */
+function hostAllowed(host) {
+  return FETCH_ALLOWED_HOSTS.has(host) || host.endsWith(".aliyuncs.com") || host.endsWith(".alicdn.com");
+}
 /* ★ 2026-10-06（审查 E4）：幂等缓存/产物/临时图的保留期与清理。
    原实现只写不删 —— _photos 临时图与 output 产物（每单数 MB~数十 MB）永不清理，磁盘必满。 */
 const IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;         // 幂等缓存保留 10 分钟（与命中窗口一致）
@@ -599,7 +606,7 @@ function fetchBuffer(u, depth) {
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return reject(new Error("unsupported protocol: " + parsed.protocol));
     if (parsed.username || parsed.password) return reject(new Error("credentials in url not allowed"));
     const host = parsed.hostname;
-    if (!(FETCH_ALLOWED_HOSTS.has(host) || host.endsWith(".alicdn.com")))
+    if (!hostAllowed(host))
       return reject(new Error("image host is not allowed: " + host));
     if (depth > FETCH_MAX_REDIRECTS) return reject(new Error("too many redirects"));
 
