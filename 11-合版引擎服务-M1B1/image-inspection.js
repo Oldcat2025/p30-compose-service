@@ -2,11 +2,18 @@
 const https = require('https');
 const crypto = require('crypto');
 const MAX_BYTES = 10 * 1024 * 1024;
-const ALLOWED_HOSTS = new Set(['catait-images-photo-factory.oss-cn-hangzhou.aliyuncs.com', 'ozon.zeabur.app']);
+const ALLOWED_HOSTS = new Set(['catait-images-photo-factory.oss-cn-hangzhou.aliyuncs.com',
+  'catait-images-us-west-1.oss-us-west-1.aliyuncs.com',   // ★ 2026-10-08：07 迁美西后的新桶
+  'ozon.zeabur.app']);
+/* ★ 2026-10-08（同一类 bug 的第三处）：桶迁美西后白名单没跟着改 → 新桶的图一律拒收。
+   加后缀兜底（任何 *.aliyuncs.com）+ *.alicdn.com，下次迁桶不会再炸；其余约束不变。 */
+function hostAllowed(host) {
+  return ALLOWED_HOSTS.has(host) || host.endsWith('.aliyuncs.com') || host.endsWith('.alicdn.com');
+}
 function readImage(url) {
   let u;
   try { u = new URL(String(url)); } catch (_) { return Promise.reject(new Error('invalid image URL')); }
-  if (u.protocol !== 'https:' || u.username || u.password || (u.port && u.port !== '443') || !(ALLOWED_HOSTS.has(u.hostname)||u.hostname.endsWith('.alicdn.com')))
+  if (u.protocol !== 'https:' || u.username || u.password || (u.port && u.port !== '443') || !hostAllowed(u.hostname))
     return Promise.reject(new Error('image host is not allowed'));
   return new Promise((resolve, reject) => {
     const req = https.get(u, {timeout: 20000,headers:{Referer:'https://detail.1688.com/','User-Agent':'Mozilla/5.0'}}, res => {
