@@ -84,16 +84,20 @@ function drawD3(c){
 function drawD4(c){
  const rows=c.d.comparisonFacts||[];
  if(rows.length<RULES.D4.min||rows.length>RULES.D4.max||rows.some(r=>!r.left||!r.right||!r.evidence)){c.overflow.push({element:'comparison',reason:'缺少已确认、有出处的对比事实'});return;}
- const gap=c.W*.025,lw=(c.contentW-gap)*.4,rw=(c.contentW-gap)*.6,rx=c.pad+lw+gap,tagH=c.H*.09,rowH=c.H*.10;
+ const gap=c.W*.025,lw=(c.contentW-gap)*.44,rw=(c.contentW-gap)*.56,rx=c.pad+lw+gap,tagH=c.H*.09,rowH=c.H*.10;
  const top=bestY(c,tagH+rows.length*(rowH+c.H*.008),c.pad,c.contentW,bodyTop(c));
  card(c,c.pad,top,lw,tagH,'#565b61');card(c,rx,top,rw,tagH,color(c));
  label(c,c.d.leftTag||'СРАВНЕНИЕ',c.pad+c.W*.02,top+c.H*.015,lw-c.W*.04,tagH-c.H*.02,'compareTag',0);
  label(c,c.d.rightTag||'НАША МОДЕЛЬ',rx+c.W*.02,top+c.H*.015,rw-c.W*.04,tagH-c.H*.02,'compareTag',1);
+ /* ★ 2026-10-09（老猫实测 D4）：左栏 40% 宽、行高 160px、字号 0.032W 时**只能放 2 行**，
+    而对比事实常需 3 行 → 引擎按上限截断（"…с насадкой для" 这种断句），C8 判 LAYOUT 溢出 —— 判得对。
+    修法：① 对比表格字号降到 0.028W；② 上下内边距收紧（.016/.025 → .011/.016）；
+          ③ 左右栏比例 40/60 → 44/56（长句多的一侧不再挤）—— 三条合起来每格可容 3 行。 */
  rows.forEach((r,i)=>{
-  const y=top+tagH+c.H*.012+i*(rowH+c.H*.008);
-  card(c,c.pad,y,lw,rowH,'rgba(248,248,248,0.96)');card(c,rx,y,rw,rowH,color(c));
-  label(c,r.left,c.pad+c.W*.02,y+c.H*.016,lw-c.W*.04,rowH-c.H*.025,'compareLeft',i,'#333');
-  label(c,r.right,rx+c.W*.02,y+c.H*.016,rw-c.W*.04,rowH-c.H*.025,'compareRight',i);
+ const y=top+tagH+c.H*.012+i*(rowH+c.H*.008);
+ card(c,c.pad,y,lw,rowH,'rgba(248,248,248,0.96)');card(c,rx,y,rw,rowH,color(c));
+ label(c,r.left,c.pad+c.W*.02,y+c.H*.011,lw-c.W*.04,rowH-c.H*.016,'compareLeft',i,'#333',c.W*.028);
+ label(c,r.right,rx+c.W*.02,y+c.H*.011,rw-c.W*.04,rowH-c.H*.016,'compareRight',i,'#fff',c.W*.028);
  });
  c.elements.push({kind:'compareBox',x:c.pad,y:top,w:c.contentW,h:tagH+rows.length*(rowH+c.H*.008),leftRatio:.4,rightRatio:.6});
 }
