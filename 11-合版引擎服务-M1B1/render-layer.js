@@ -265,15 +265,18 @@ async function renderShot(body, deps) {
     const logoImg=await cv.loadImage(await deps.fetchBuffer(String(brand.logoUrl)));
     const logoW=Math.min(W*.135,barH*.80*(logoImg.width/logoImg.height));
     const logoH=logoW*logoImg.height/logoImg.width;
-    ctx.drawImage(logoImg,(W-logoW)/2,H*.04-logoH/2,logoW,logoH);
-    elements.push({kind:'logo',x:(W-logoW)/2,y:H*.04-logoH/2,w:logoW,h:logoH,source:'original_image'});
+    /* ★ 2026-10-09（老猫：「图片标题和 LOGO 之间相距很近」）：LOGO 在品牌栏内**垂直居中**，
+       不再贴到品牌栏下沿（原来中心固定在 4%H，底边几乎顶住标题带）。 */
+    const _loY=Math.max(0,Math.round((barH-logoH)/2));
+    ctx.drawImage(logoImg,(W-logoW)/2,_loY,logoW,logoH);
+    elements.push({kind:'logo',x:(W-logoW)/2,y:_loY,w:logoW,h:logoH,source:'original_image'});
   }
 
   // ---- 3) 字号基准 ----
   const pad = Math.round(W * 0.05);
   const contentW = W - pad * 2;
   // 正文起点（画面内）
-  const textTop = barH + Math.round(H * 0.008);   // ★ 标题在自己的专属带里（不再压在画面上）
+  const textTop = barH + Math.round(H * 0.026);   // ★ 2026-10-09：标题带与 LOGO/品牌栏之间留白加大（原来 0.008H，LOGO 几乎贴住标题）
 
   // ---- 4) 主标题（画面内顶部）----
   let cursorY = textTop;
