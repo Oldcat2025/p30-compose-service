@@ -11,6 +11,27 @@ function fitInline(c,t,maxW,maxLines,startPx,fam){
  return {lines,px,width:Math.max(0,...lines.map(x=>c.measure(x,px,'700',fam))),overflowed:long||lines.length>maxLines};
 }
 function bodyTop(c){return Math.max(c.cursorY+c.H*.022,c.dy+c.dh*.15);}
+/* ★ 2026-10-09（老猫：「多次出现标签遮盖商品主要细节」）：主体避让真正落地。
+   render-layer 已用边缘能量法算出主体 bbox（c.subject.bbox）—— 以前 nudgeBlock 是空实现（`return y`），
+   版式一律用固定位置，主体正好在那儿时文字就压上去（实测：D1 的参数牌压住电池包；D2 标题压住刀盘特写）。
+   现在：文本块在若干候选位置里挑「与主体重叠最少」的那个；本来就不重叠 → 一律不动（版式稳定）；
+   有更优且明显更不压的候选才移动；都不行保留原位置（输不出更差的结果）。 */
+function subjOf(c){const b=c&&c.subject&&c.subject.bbox;if(!b)return null;const x=Number(b.x),y=Number(b.y),w=Number(b.w),h=Number(b.h);if(![x,y,w,h].every(Number.isFinite)||w<=0||h<=0)return null;return {x:x,y:y,w:w,h:h};}
+function ovl(a,b){if(!a||!b)return 0;const ix=Math.max(0,Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x));const iy=Math.max(0,Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y));return (ix*iy)/Math.max(1,Math.min(a.w*a.h,b.w*b.h));}
+function bestY(c,rectH,rectX,rectW,planY){
+ const sub=subjOf(c);if(!sub)return planY;
+ const ov0=ovl({x:rectX,y:planY,w:rectW,h:rectH},sub);
+ if(ov0<=0.02)return planY;
+ const cands=[sub.y-rectH-c.H*0.02, sub.y+sub.h+c.H*0.015, Math.max(c.dy+c.dh*0.03,(c.cursorY||0))+c.H*0.01];
+ let best=null;
+ for(let i=0;i<cands.length;i++){const y=cands[i];
+  if(!Number.isFinite(y)||y<c.H*0.02||y+rectH>c.H-c.H*0.012)continue;
+  const ov=ovl({x:rectX,y:y,w:rectW,h:rectH},sub);
+  if(!best||ov<best.ov-1e-9)best={y:y,ov:ov};
+ }
+ if(best&&best.ov<ov0-0.02)return best.y;
+ return planY;
+}
 function nudgeBlock(c,y){return y;} // Layouts reserve fixed text regions; never move text over another text region.
 function color(c){return /^#[0-9a-f]{6}$/i.test(c.kitAccent||'')?c.kitAccent:'#245842';}
 function card(c,x,y,w,h,fill){h=Math.max(0,h);w=Math.max(0,w);if(!w||!h)return;c.ctx.save();c.ctx.fillStyle=fill;c.roundRect(c.ctx,x,y,w,h,c.W*.012);c.ctx.fill();c.ctx.restore();}
@@ -26,7 +47,8 @@ function bullets(c){return (c.d.bullets||[]).map(b=>String(typeof b==='string'?b
 function drawD1(c){
  const items=bullets(c),params=(c.d.params||[]).map(p=>String(p.key||'')+' '+String(p.value||'')).filter(x=>x.trim());
  if(items.length<RULES.D1.min||items.length>RULES.D1.max)c.overflow.push({element:'D1',reason:'主图需1至3条短卖点，有真实参数时展示一个参数模块'});
- const gap=c.W*.025,left=c.contentW*.56,right=c.contentW-left-gap,rowH=c.H*.08,top=c.H-c.pad-Math.max(items.length,params.length)*rowH;
+ const gap=c.W*.025,left=c.contentW*.56,right=c.contentW-left-gap,rowH=c.H*.08,_rows=Math.max(items.length,params.length),_blockH=_rows*rowH,_planTop=c.H-c.pad-_blockH;
+ const top=bestY(c,_blockH-c.H*.009,c.pad,c.contentW,_planTop);
  if(items.length)card(c,c.pad,top,left,items.length*rowH-c.H*.009,'rgba(55,59,63,.76)');
  items.forEach((t,i)=>{const y=top+i*rowH;label(c,t,c.pad+c.W*.018,y+c.H*.012,left-c.W*.036,rowH-c.H*.018,'heroFeature',i);});
  const x=c.pad+left+gap;
@@ -55,13 +77,15 @@ function drawD2(c){
 }
 function drawD3(c){
  const items=bullets(c);if(items.length<RULES.D3.min||items.length>RULES.D3.max)c.overflow.push({element:'sceneLabels',reason:'场景图只允许1至2条卖点'});
- const w=c.contentW*.70,h=c.H*.075,gap=c.H*.014,top=c.H-c.pad-items.length*(h+gap);
+ const w=c.contentW*.70,h=c.H*.075,gap=c.H*.014,_planTop=c.H-c.pad-items.length*(h+gap);
+ const top=bestY(c,items.length*(h+gap)-gap,c.pad,w,_planTop);
  items.forEach((t,i)=>{const y=top+i*(h+gap);card(c,c.pad,y,w,h,color(c));label(c,t,c.pad+c.W*.02,y+c.H*.015,w-c.W*.04,h-c.H*.02,'sceneLabel',i);});
 }
 function drawD4(c){
  const rows=c.d.comparisonFacts||[];
  if(rows.length<RULES.D4.min||rows.length>RULES.D4.max||rows.some(r=>!r.left||!r.right||!r.evidence)){c.overflow.push({element:'comparison',reason:'缺少已确认、有出处的对比事实'});return;}
- const gap=c.W*.025,lw=(c.contentW-gap)*.4,rw=(c.contentW-gap)*.6,rx=c.pad+lw+gap,top=bodyTop(c),tagH=c.H*.09,rowH=c.H*.10;
+ const gap=c.W*.025,lw=(c.contentW-gap)*.4,rw=(c.contentW-gap)*.6,rx=c.pad+lw+gap,tagH=c.H*.09,rowH=c.H*.10;
+ const top=bestY(c,tagH+rows.length*(rowH+c.H*.008),c.pad,c.contentW,bodyTop(c));
  card(c,c.pad,top,lw,tagH,'#565b61');card(c,rx,top,rw,tagH,color(c));
  label(c,c.d.leftTag||'СРАВНЕНИЕ',c.pad+c.W*.02,top+c.H*.015,lw-c.W*.04,tagH-c.H*.02,'compareTag',0);
  label(c,c.d.rightTag||'НАША МОДЕЛЬ',rx+c.W*.02,top+c.H*.015,rw-c.W*.04,tagH-c.H*.02,'compareTag',1);
@@ -75,8 +99,9 @@ function drawD4(c){
 }
 function drawD5(c){
  const items=bullets(c);if(items.length<RULES.D5.min||items.length>RULES.D5.max)c.overflow.push({element:'featureCards',reason:'总结图需3至6条已确认优势或参数'});
- const top=bodyTop(c),gap=c.W*.025,w=c.contentW*.45,h=Math.min(c.H*.12,(c.H-c.pad-top-(items.length-1)*gap)/Math.max(1,items.length));
+ const gap=c.W*.025,w=c.contentW*.45,_planTop=bodyTop(c),h=Math.min(c.H*.12,(c.H-c.pad-_planTop-(items.length-1)*gap)/Math.max(1,items.length));
+ const top=bestY(c,items.length*h+(items.length-1)*gap,c.pad,w,_planTop);
  items.forEach((t,i)=>{const x=c.pad,y=top+i*(h+gap);
   card(c,x,y,w,h,color(c));label(c,t,x+c.W*.02,y+c.H*.015,w-c.W*.04,h-c.H*.02,'featureCard',i);});
 }
-module.exports={drawD1,drawD2,drawD3,drawD4,drawD5,fitInline,bodyTop,nudgeBlock};
+module.exports={drawD1,drawD2,drawD3,drawD4,drawD5,fitInline,bodyTop,nudgeBlock,bestY,subjOf};
