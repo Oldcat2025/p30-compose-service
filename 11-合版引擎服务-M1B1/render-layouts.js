@@ -80,7 +80,7 @@ function drawD1(c){
  params.forEach((t,i)=>label(c,t,x+c.W*.018,top+i*rowH+c.H*.012,right-c.W*.036,rowH-c.H*.018,'heroParam',i));
 }
 function drawD2(c){
- const texts=bullets(c),regions=c.d.detailCrops||[],src=c.d.detailSource;
+ const texts=bullets(c),regions=c.d.detailCrops||[],src=c.detailSource;
  if(!src||regions.length<RULES.D2.min||regions.length>RULES.D2.max||regions.length!==texts.length){c.overflow.push({element:'detailCrops',reason:'需2至4个真实参考图局部，与细节文案逐一对应'});return;}
  /* ★ 2026-10-09 第二轮（老猫逐图反馈）：
     ① 「中间3个细节图不要有多余的白色部分」→ 图片**铺满格子**（按比例放大居中裁切），不再白底留边；
