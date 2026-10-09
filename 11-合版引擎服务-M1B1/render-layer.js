@@ -221,10 +221,16 @@ async function renderShot(body, deps) {
 
   // ---- 1) 品牌栏（letterbox：新增条带，画面等比缩小下移 → 永不遮挡内容）----
   const barH = body.shotCode === 'D2' ? 0 : Math.round(H * .06);
-  const innerH = H - barH;
+  /* ★ 2026-10-09（老猫：「多次出现标签遮盖商品主要细节」）：
+     主标题以前是**压在画面顶部**的（半透明黑条 + 白字）——主体一旦在画面顶部就被遮住。
+     现在把标题高度先量出来，给它留一条**专属带**：画面只在标题带以下排布 → 标题永不覆盖商品。
+     （只改留白与排布，不动任何文案/字号/规则。） */
+  const _tf = d.title ? fitText(ctx, d.title, W - Math.round(W * 0.1), 2, Math.round(W * 0.06), Math.round(W * 0.06), "ZernoHead") : null;
+  const titleBandH = _tf ? Math.round(_tf.fontPx * 1.16 * _tf.lines.length + W * 0.03 + H * 0.016) : 0;
+  const innerH = Math.max(1, H - barH - titleBandH);
   const sc = Math.min(W / src.width, innerH / src.height);
   const dw = Math.round(src.width * sc), dh = Math.round(src.height * sc);
-  const dx = Math.round((W - dw) / 2), dy = barH + Math.round((innerH - dh) / 2);
+  const dx = Math.round((W - dw) / 2), dy = barH + titleBandH + Math.round((innerH - dh) / 2);
 
   ctx.fillStyle = "#FFFFFF";
   ctx.fillRect(0, 0, W, H);
@@ -267,7 +273,7 @@ async function renderShot(body, deps) {
   const pad = Math.round(W * 0.05);
   const contentW = W - pad * 2;
   // 正文起点（画面内）
-  const textTop = dy + Math.round(dh * 0.03);
+  const textTop = barH + Math.round(H * 0.008);   // ★ 标题在自己的专属带里（不再压在画面上）
 
   // ---- 4) 主标题（画面内顶部）----
   let cursorY = textTop;
