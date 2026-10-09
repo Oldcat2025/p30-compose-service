@@ -333,7 +333,9 @@ async function renderShot(body, deps) {
     const product= d.productReferenceUrl ? await cv.loadImage(await deps.fetchBuffer(d.productReferenceUrl)) : src;
     const top=layouts().bodyTop({cursorY,dy,dh,H}),x=pad+contentW*.45+W*.025,w=W-pad-x,h=H-pad-top;
     const scale=Math.min(w/product.width,h/product.height),pw=product.width*scale,ph=product.height*scale;
-    ctx.save();ctx.fillStyle='#F2F5F3';ctx.fillRect(0,top,W,H-top);
+    /* 2026-10-09 二轮（老猫：D5「大块白色…应该是有背景的产品图做背景」）：原来用不透明 #F2F5F3 把
+       下半幅整块盖死，底图环境全被埋掉 → 改成 50% 半透明蒙版（与 D2 同款），底图透出来当背景。 */
+    ctx.save();ctx.fillStyle='rgba(242,245,243,.5)';ctx.fillRect(0,top,W,H-top);
     ctx.drawImage(product,x+(w-pw)/2,top+(h-ph)/2,pw,ph);ctx.restore();
     elements.push({kind:'productReference',x:x+(w-pw)/2,y:top+(h-ph)/2,w:pw,h:ph,source:'reference_image'});
   }
