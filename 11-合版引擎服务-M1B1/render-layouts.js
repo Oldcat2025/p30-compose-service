@@ -85,7 +85,13 @@ function drawD2(c){
  const h=Math.max(c.H*.16,Math.min(c.H*.44,(c.H-c.pad-top-gap*Math.max(0,rows-1))/rows));
  /* ★ 2026-10-09：网格在可用高度里**垂直居中** —— 否则 1 行时下方会剩一大片死白（老猫看图会挑） */
  const gridH=rows*h+(rows-1)*gap, y0=top+Math.max(0,(c.H-c.pad-top-gridH)/2);
- c.ctx.save();c.ctx.fillStyle='#F2F5F3';c.ctx.fillRect(0,top,c.W,c.H-top);c.ctx.restore();
+ /* ★ 2026-10-09（老猫：「用场景图做 D2 图片的背景，透明度 50%」）：
+    原来这里用**不透明**的 #F2F5F3 把下半幅整块盖死 —— D2 的底图本来就是场景大图，
+    等于白生成。现在换成 **50% 半透明蒙版**：场景图透出来当背景，细节块/题注照旧压在
+    它上面（题注本身已是 50% 半透明 + 暗色投影，白卡片仍是纯白 → 仍可读）。
+    只放开背景，位置/顺序/文案规则一律不动。 */
+ c.ctx.save();c.ctx.fillStyle='rgba(242,245,243,.5)';c.ctx.fillRect(0,top,c.W,c.H-top);c.ctx.restore();
+ /* 蒙版之上的内容整体轻微提对比：细节块加白卡 + 细描边，避免浅色场景把白卡边缘糊掉 */
  regions.forEach((r,i)=>{
   if([r.x,r.y,r.w,r.h].some(x=>!Number.isFinite(x))||r.x<0||r.y<0||r.w<=0||r.h<=0||r.x+r.w>1.001||r.y+r.h>1.001)throw Error('Invalid reference crop');
   const ww=w, x=c.pad+(i%cols)*(w+gap);
