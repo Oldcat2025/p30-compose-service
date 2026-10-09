@@ -34,11 +34,29 @@ function bestY(c,rectH,rectX,rectW,planY){
 }
 function nudgeBlock(c,y){return y;} // Layouts reserve fixed text regions; never move text over another text region.
 function color(c){return /^#[0-9a-f]{6}$/i.test(c.kitAccent||'')?c.kitAccent:'#245842';}
+/* ★ 2026-10-09（老猫：「图片文案标签色块的底色透明度设定 50%，不要挡住产品主体、也不要挡住人物脸部」）：
+   题注色块统一改半透明（alpha 0.5）；文字加暗色投影保证在浅色背景上仍可读。
+   配合主体避让（bestY）一起用 —— 位置先避开主体，即使轻微交叠也能透出被遮内容。 */
+function rgbaOf(hex,a){
+ const m=/^#([0-9a-f]{6})$/i.exec(String(hex||'')); if(!m) return 'rgba(36,88,66,'+a+')';
+ const n=parseInt(m[1],16); return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')';
+}
+function colorA(c,a){return rgbaOf(color(c),a);}
+/* 顺序角标（① ② ③）：与 5.4「真实细节与对比依据」里框选的先后顺序一一对应，
+   让运营在成品图上就能核对"第N张细节图 = 我框的第N个位置"。 */
+function badge(c,text,x,y,size){
+ c.ctx.save(); c.ctx.beginPath(); c.ctx.fillStyle='rgba(0,0,0,.55)';
+ c.ctx.arc(x+size/2,y+size/2,size/2,0,Math.PI*2); c.ctx.fill();
+ c.ctx.fillStyle='#fff'; c.ctx.font='800 '+Math.round(size*.62)+'px "ZernoBodyBold",sans-serif';
+ c.ctx.textAlign='center'; c.ctx.textBaseline='middle';
+ c.ctx.fillText(String(text),x+size/2,y+size/2+size*.03); c.ctx.restore();
+}
 function card(c,x,y,w,h,fill){h=Math.max(0,h);w=Math.max(0,w);if(!w||!h)return;c.ctx.save();c.ctx.fillStyle=fill;c.roundRect(c.ctx,x,y,w,h,c.W*.012);c.ctx.fill();c.ctx.restore();}
 function label(c,text,x,y,w,h,kind,index,fill='#fff',px=c.W*.032){
  const f=fitInline(c,text,w,Math.floor(h/(px*1.2)),Math.round(px),'ZernoBodyBold');
  if(f.overflowed)c.overflow.push({element:kind+'['+index+']',reason:'文案过长；请精简文案，禁止缩字或截断'});
- c.ctx.save();c.ctx.font='700 '+f.px+'px "ZernoBodyBold",sans-serif';c.ctx.textBaseline='top';c.ctx.fillStyle=fill;
+ c.ctx.font='700 '+f.px+'px "ZernoBodyBold",sans-serif';c.ctx.textBaseline='top';c.ctx.fillStyle=fill;
+ c.ctx.shadowColor='rgba(0,0,0,.5)';c.ctx.shadowBlur=Math.round(c.W*.006);
  // An overflow preview is still returned, but cannot pass QA or be released.
  f.lines.slice(0,Math.max(1,Math.floor(h/(px*1.2)))).forEach((line,i)=>c.ctx.fillText(line,x,y+i*px*1.2));
  c.ctx.restore();c.elements.push({kind,index,x,y,w,h,fontPx:f.px,text:String(text),lines:f.lines});
@@ -49,44 +67,51 @@ function drawD1(c){
  if(items.length<RULES.D1.min||items.length>RULES.D1.max)c.overflow.push({element:'D1',reason:'主图需1至3条短卖点，有真实参数时展示一个参数模块'});
  const gap=c.W*.025,left=c.contentW*.56,right=c.contentW-left-gap,rowH=c.H*.08,_rows=Math.max(items.length,params.length),_blockH=_rows*rowH,_planTop=c.H-c.pad-_blockH;
  const top=bestY(c,_blockH-c.H*.009,c.pad,c.contentW,_planTop);
- if(items.length)card(c,c.pad,top,left,items.length*rowH-c.H*.009,'rgba(55,59,63,.76)');
+ if(items.length)card(c,c.pad,top,left,items.length*rowH-c.H*.009,'rgba(55,59,63,.5)');
  items.forEach((t,i)=>{const y=top+i*rowH;label(c,t,c.pad+c.W*.018,y+c.H*.012,left-c.W*.036,rowH-c.H*.018,'heroFeature',i);});
  const x=c.pad+left+gap;
- if(params.length)card(c,x,top,right,params.length*rowH-c.H*.009,'rgba(55,59,63,.93)');
+ if(params.length)card(c,x,top,right,params.length*rowH-c.H*.009,'rgba(55,59,63,.5)');
  params.forEach((t,i)=>label(c,t,x+c.W*.018,top+i*rowH+c.H*.012,right-c.W*.036,rowH-c.H*.018,'heroParam',i));
 }
 function drawD2(c){
  const texts=bullets(c),regions=c.d.detailCrops||[],src=c.detailSource;
  if(!src||regions.length<RULES.D2.min||regions.length>RULES.D2.max||regions.length!==texts.length){c.overflow.push({element:'detailCrops',reason:'需2至4个真实参考图局部，与细节文案逐一对应'});return;}
- const top=bodyTop(c),gap=c.W*.02,w=c.contentW*.28,rows=Math.ceil(regions.length/2),h=Math.min(c.H*.32,(c.H-c.pad-top-gap)/rows);
- c.ctx.save();c.ctx.fillStyle='#F2F5F3';c.ctx.fillRect(0,top,c.W,c.H-top);
- const centerW=c.contentW-2*w-2*gap,centerH=c.H-c.pad-top,sc=Math.min(centerW/src.width,centerH/src.height),pw=src.width*sc,ph=src.height*sc;
- c.ctx.drawImage(src,(c.W-pw)/2,top+(centerH-ph)/2,pw,ph);c.ctx.restore();
- c.elements.push({kind:'productReference',x:(c.W-pw)/2,y:top+(centerH-ph)/2,w:pw,h:ph,source:'reference_image'});
+ /* ★ 2026-10-09（老猫）：① 中间那张"整机白底图"不再平铺 —— 细节块本身就是内容，多一张整机图既挤又没信息量；
+    ② 细节块放大到两列铺满（单数个时最后一块横跨两列）；③ 每块左上角加顺序角标 ①②③，
+       与 5.4「真实细节与对比依据」里**框选的先后顺序**一一对应（帧选顺序 = 这里的编号 = D2 短句顺序）；
+    ④ 题注色块底改为 50% 透明（见 colorA）。 */
+ /* 列数：3 个细节时**一行三块**（避免出现空半行），2/4 个时两列铺满 */
+ const top=bodyTop(c),gap=c.W*.02,cols=regions.length===3?3:2,w=(c.contentW-gap*(cols-1))/cols,rows=Math.ceil(regions.length/cols);
+ const h=Math.max(c.H*.16,Math.min(c.H*.44,(c.H-c.pad-top-gap*Math.max(0,rows-1))/rows));
+ /* ★ 2026-10-09：网格在可用高度里**垂直居中** —— 否则 1 行时下方会剩一大片死白（老猫看图会挑） */
+ const gridH=rows*h+(rows-1)*gap, y0=top+Math.max(0,(c.H-c.pad-top-gridH)/2);
+ c.ctx.save();c.ctx.fillStyle='#F2F5F3';c.ctx.fillRect(0,top,c.W,c.H-top);c.ctx.restore();
  regions.forEach((r,i)=>{
   if([r.x,r.y,r.w,r.h].some(x=>!Number.isFinite(x))||r.x<0||r.y<0||r.w<=0||r.h<=0||r.x+r.w>1.001||r.y+r.h>1.001)throw Error('Invalid reference crop');
-  const x=i%2===0?c.pad:c.W-c.pad-w,y=top+Math.floor(i/2)*(h+gap),labelH=c.H*.10,ih=h-labelH;
-  card(c,x,y,w,h,'#fff');
+  const ww=w, x=c.pad+(i%cols)*(w+gap);
+  const y=y0+Math.floor(i/cols)*(h+gap),labelH=c.H*.095,ih=h-labelH;
+  card(c,x,y,ww,h,'#fff');
   const sx=r.x*src.width,sy=r.y*src.height,sw=r.w*src.width,sh=r.h*src.height;
-  const scale=Math.min(w/sw,ih/sh),dw=sw*scale,dh=sh*scale;
-  c.ctx.drawImage(src,sx,sy,sw,sh,x+(w-dw)/2,y+(ih-dh)/2,dw,dh);
-  card(c,x,y+ih,w,labelH,color(c));
-  label(c,texts[i],x+c.W*.015,y+ih+c.H*.01,w-c.W*.03,labelH-c.H*.02,'detailLabel',i);
-  c.elements.push({kind:'detailCrop',index:i,x,y,w,h:ih,sourceRegion:r,source:'reference_image'});
+  const scale=Math.min((ww-c.W*.03)/sw,(ih-c.H*.02)/sh),dw=sw*scale,dh=sh*scale;
+  c.ctx.drawImage(src,sx,sy,sw,sh,x+(ww-dw)/2,y+(ih-dh)/2,dw,dh);
+  card(c,x,y+ih,ww,labelH,colorA(c,.5));
+  label(c,texts[i],x+c.W*.02,y+ih+c.H*.01,ww-c.W*.04,labelH-c.H*.02,'detailLabel',i);
+  badge(c,String(i+1),x+c.W*.012,y+c.W*.012,c.W*.048);
+  c.elements.push({kind:'detailCrop',index:i,order:i+1,x,y,w:ww,h:ih,sourceRegion:r,source:'reference_image'});
  });
 }
 function drawD3(c){
  const items=bullets(c);if(items.length<RULES.D3.min||items.length>RULES.D3.max)c.overflow.push({element:'sceneLabels',reason:'场景图只允许1至2条卖点'});
  const w=c.contentW*.70,h=c.H*.075,gap=c.H*.014,_planTop=c.H-c.pad-items.length*(h+gap);
  const top=bestY(c,items.length*(h+gap)-gap,c.pad,w,_planTop);
- items.forEach((t,i)=>{const y=top+i*(h+gap);card(c,c.pad,y,w,h,color(c));label(c,t,c.pad+c.W*.02,y+c.H*.015,w-c.W*.04,h-c.H*.02,'sceneLabel',i);});
+ items.forEach((t,i)=>{const y=top+i*(h+gap);card(c,c.pad,y,w,h,colorA(c,.5));label(c,t,c.pad+c.W*.02,y+c.H*.015,w-c.W*.04,h-c.H*.02,'sceneLabel',i);});
 }
 function drawD4(c){
  const rows=c.d.comparisonFacts||[];
  if(rows.length<RULES.D4.min||rows.length>RULES.D4.max||rows.some(r=>!r.left||!r.right||!r.evidence)){c.overflow.push({element:'comparison',reason:'缺少已确认、有出处的对比事实'});return;}
  const gap=c.W*.025,lw=(c.contentW-gap)*.44,rw=(c.contentW-gap)*.56,rx=c.pad+lw+gap,tagH=c.H*.09,rowH=c.H*.10;
  const top=bestY(c,tagH+rows.length*(rowH+c.H*.008),c.pad,c.contentW,bodyTop(c));
- card(c,c.pad,top,lw,tagH,'#565b61');card(c,rx,top,rw,tagH,color(c));
+ card(c,c.pad,top,lw,tagH,'rgba(86,91,97,.5)');card(c,rx,top,rw,tagH,colorA(c,.5));
  label(c,c.d.leftTag||'СРАВНЕНИЕ',c.pad+c.W*.02,top+c.H*.015,lw-c.W*.04,tagH-c.H*.02,'compareTag',0);
  label(c,c.d.rightTag||'НАША МОДЕЛЬ',rx+c.W*.02,top+c.H*.015,rw-c.W*.04,tagH-c.H*.02,'compareTag',1);
  /* ★ 2026-10-09（老猫实测 D4）：左栏 40% 宽、行高 160px、字号 0.032W 时**只能放 2 行**，
@@ -95,7 +120,7 @@ function drawD4(c){
           ③ 左右栏比例 40/60 → 44/56（长句多的一侧不再挤）—— 三条合起来每格可容 3 行。 */
  rows.forEach((r,i)=>{
  const y=top+tagH+c.H*.012+i*(rowH+c.H*.008);
- card(c,c.pad,y,lw,rowH,'rgba(248,248,248,0.96)');card(c,rx,y,rw,rowH,color(c));
+ card(c,c.pad,y,lw,rowH,'rgba(248,248,248,.5)');card(c,rx,y,rw,rowH,colorA(c,.5));
  label(c,r.left,c.pad+c.W*.02,y+c.H*.011,lw-c.W*.04,rowH-c.H*.016,'compareLeft',i,'#333',c.W*.028);
  label(c,r.right,rx+c.W*.02,y+c.H*.011,rw-c.W*.04,rowH-c.H*.016,'compareRight',i,'#fff',c.W*.028);
  });
@@ -106,6 +131,6 @@ function drawD5(c){
  const gap=c.W*.025,w=c.contentW*.45,_planTop=bodyTop(c),h=Math.min(c.H*.12,(c.H-c.pad-_planTop-(items.length-1)*gap)/Math.max(1,items.length));
  const top=bestY(c,items.length*h+(items.length-1)*gap,c.pad,w,_planTop);
  items.forEach((t,i)=>{const x=c.pad,y=top+i*(h+gap);
-  card(c,x,y,w,h,color(c));label(c,t,x+c.W*.02,y+c.H*.015,w-c.W*.04,h-c.H*.02,'featureCard',i);});
+  card(c,x,y,w,h,colorA(c,.5));label(c,t,x+c.W*.02,y+c.H*.015,w-c.W*.04,h-c.H*.02,'featureCard',i);});
 }
 module.exports={drawD1,drawD2,drawD3,drawD4,drawD5,fitInline,bodyTop,nudgeBlock,bestY,subjOf};
