@@ -985,6 +985,17 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  /* ★ 2026-10-11：量出白底图里产品的实际范围并按 N 格切分（D2 细节框用）—— 确定性、零成本 */
+  if (req.method === 'POST' && url.pathname === '/v1/locate-crops') {
+    try {
+      const body = JSON.parse(await readBody(req, 15 * 1024 * 1024));
+      const result = await require('./image-inspection').locateCrops(body, {requireCanvas});
+      return json(res, 200, result);
+    } catch (e) {
+      return json(res, 422, {ok: false, error: {code: 'LOCATE_FAILED', message: String(e.message || e)}});
+    }
+  }
+
   // ---- M2：渲染层端点（把数据确定性叠到「零文字」背景图上）----
   if (req.method === "POST" && url.pathname === "/v1/render-shot") {
     let body;
@@ -1007,7 +1018,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === "/") {
-    return json(res, 200, { ok: true, service: "p30-compose-engine", version: "0.2.0", endpoints: ["POST /v1/compose", "POST /v1/logo-overlay", "POST /v1/render-shot", "GET /v1/health", "GET /v1/templates"] });
+    return json(res, 200, { ok: true, service: "p30-compose-engine", version: "0.2.0", endpoints: ["POST /v1/compose", "POST /v1/logo-overlay", "POST /v1/render-shot", "POST /v1/locate-crops", "GET /v1/health", "GET /v1/templates"] });
   }
 
   return json(res, 404, { ok: false, status: "failed", error: { code: "NOT_FOUND", message: "no route " + url.pathname, httpStatus: 404, retryable: false } });
