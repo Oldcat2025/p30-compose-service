@@ -52,4 +52,48 @@ async function inspectImage(body, deps) {
     format:png?'image/png':'image/jpeg',ext:png?'.png':'.jpg',
     contentSha256:crypto.createHash('sha256').update(buf).digest('hex')};
 }
-module.exports={inspectImage,readImage};
+
+/* ★ 2026-10-11（老猫看图反馈：D2 有个细节框落在空白处、和标签对不上）：
+   从白底图里**量出产品在画面的实际范围**，再按 N 格切分 —— 零成本、确定性、不调模型。
+   与 /v1/inspect-image 同口径判"近白=背景"。返回归一化矩形（0-1），顺序=从上到下、从左到右。 */
+async function locateCrops(body, deps) {
+  const buf = body.imageBase64 ? Buffer.from(String(body.imageBase64).replace(/^data:[^,]+,/, ''), 'base64') : await readImage(body.url);
+  if (!buf.length || buf.length > MAX_BYTES) throw new Error('empty or oversized image');
+  const cv = deps.requireCanvas(), image = await cv.loadImage(buf);
+  if (!image.width || !image.height || image.width > 7680 || image.height > 7680) throw new Error('invalid image dimensions');
+  const N = 120;
+  const small = cv.createCanvas(N, N), ctx = small.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, N, N); ctx.drawImage(image, 0, 0, N, N);
+  const px = ctx.getImageData(0, 0, N, N).data;
+  let x0 = N, y0 = N, x1 = -1, y1 = -1, fg = 0;
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const i = (y * N + x) * 4, mn = Math.min(px[i], px[i + 1], px[i + 2]), mx = Math.max(px[i], px[i + 1], px[i + 2]);
+    if (!(mn >= 238 && mx - mn <= 12)) { fg++; if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; }
+  }
+  if (x1 < 0 || fg < N * N * 0.01) throw new Error('没量到产品（画面几乎全白）—— 请先确认白底图');
+  const m = 0.5 / N;
+  const bx = Math.max(0, x0 / N - m), by = Math.max(0, y0 / N - m);
+  const bw = Math.min(1, (x1 + 1) / N + m) - bx, bh = Math.min(1, (y1 + 1) / N + m) - by;
+  const count = Math.max(2, Math.min(4, parseInt(body.count, 10) || 3));
+  const rects = [];
+  if (count === 3) {                                  /* 上·中 / 中·左 / 下·中右 —— 与老猫定的默认布局同源，但贴着主体 */
+    rects.push({x: bx + bw * 0.18, y: by, w: bw * 0.64, h: bh * 0.42});
+    rects.push({x: bx, y: by + bh * 0.38, w: bw * 0.52, h: bh * 0.44});
+    rects.push({x: bx + bw * 0.40, y: by + bh * 0.58, w: bw * 0.60, h: bh * 0.42});
+  } else if (count === 2) {
+    rects.push({x: bx, y: by, w: bw * 0.5, h: bh});
+    rects.push({x: bx + bw * 0.5, y: by, w: bw * 0.5, h: bh});
+  } else {
+    for (let r = 0; r < 2; r++) for (let c = 0; c < 2; c++)
+      rects.push({x: bx + bw * (c * 0.5), y: by + bh * (r * 0.5), w: bw * 0.5, h: bh * 0.5});
+  }
+  const clamp = (r) => {
+    const x = Math.max(0, Math.min(0.999, r.x)), y = Math.max(0, Math.min(0.999, r.y));
+    return {x: +x.toFixed(4), y: +y.toFixed(4), w: +Math.min(1 - x, r.w).toFixed(4), h: +Math.min(1 - y, r.h).toFixed(4)};
+  };
+  return {ok: true, count, bbox: {x: +bx.toFixed(4), y: +by.toFixed(4), w: +bw.toFixed(4), h: +bh.toFixed(4)},
+    foregroundRatio: +(fg / (N * N)).toFixed(4), crops: rects.map(clamp), width: image.width, height: image.height};
+}
+
+module.exports={inspectImage,readImage,locateCrops};
+
