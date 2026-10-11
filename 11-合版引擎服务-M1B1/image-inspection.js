@@ -75,17 +75,53 @@ async function locateCrops(body, deps) {
   const bx = Math.max(0, x0 / N - m), by = Math.max(0, y0 / N - m);
   const bw = Math.min(1, (x1 + 1) / N + m) - bx, bh = Math.min(1, (y1 + 1) / N + m) - by;
   const count = Math.max(2, Math.min(4, parseInt(body.count, 10) || 3));
-  const rects = [];
-  if (count === 3) {                                  /* 上·中 / 中·左 / 下·中右 —— 与老猫定的默认布局同源，但贴着主体 */
-    rects.push({x: bx + bw * 0.18, y: by, w: bw * 0.64, h: bh * 0.42});
-    rects.push({x: bx, y: by + bh * 0.38, w: bw * 0.52, h: bh * 0.44});
-    rects.push({x: bx + bw * 0.40, y: by + bh * 0.58, w: bw * 0.60, h: bh * 0.42});
-  } else if (count === 2) {
-    rects.push({x: bx, y: by, w: bw * 0.5, h: bh});
-    rects.push({x: bx + bw * 0.5, y: by, w: bw * 0.5, h: bh});
-  } else {
-    for (let r = 0; r < 2; r++) for (let c = 0; c < 2; c++)
-      rects.push({x: bx + bw * (c * 0.5), y: by + bh * (r * 0.5), w: bw * 0.5, h: bh * 0.5});
+  /* ★ 2026-10-11 二次修正（实测：按 bbox 切成"上/中/下"三带，第 1 带仍是空白 ——
+     因为 bbox 被那根细长喷杆撑高了，上带大部分是空气）。
+     改成**按密度挑格**：把产品范围切成 12×12 网格，挑前景像素最多的 N 格（彼此至少隔开一格），
+     每格再扩成一个固定大小的取景框 —— 保证每一格里都有实打实的产品，没有空气框。 */
+  const GRID = 12;
+  const x0c = Math.max(0, Math.floor(x0 / N * GRID)), x1c = Math.min(GRID - 1, Math.floor(x1 / N * GRID));
+  const y0c = Math.max(0, Math.floor(y0 / N * GRID)), y1c = Math.min(GRID - 1, Math.floor(y1 / N * GRID));
+  const cell = (N / GRID);
+  const dens = [];
+  for (let gy = y0c; gy <= y1c; gy++) for (let gx = x0c; gx <= x1c; gx++) {
+    let d2 = 0;
+    for (let yy = Math.floor(gy * cell); yy < Math.floor((gy + 1) * cell); yy++)
+      for (let xx = Math.floor(gx * cell); xx < Math.floor((gx + 1) * cell); xx++) {
+        const i = (yy * N + xx) * 4, mn = Math.min(px[i], px[i + 1], px[i + 2]), mx = Math.max(px[i], px[i + 1], px[i + 2]);
+        if (!(mn >= 238 && mx - mn <= 12)) d2++;
+      }
+    dens.push({gx: gx, gy: gy, d: d2});
+  }
+  dens.sort(function (a, b) { return b.d - a.d; });
+  const picked = [];
+  for (let i = 0; i < dens.length && picked.length < count; i++) {
+    const c0 = dens[i];
+    if (c0.d <= 0) break;
+    const far = picked.every(function (q) { return Math.abs(q.gx - c0.gx) + Math.abs(q.gy - c0.gy) >= 3; });
+    if (far) picked.push(c0);
+  }
+  /* 按"上→下、左→右"排回自然顺序，行文里给文案留出稳定顺序 */
+  picked.sort(function (a, b) { return (a.gy - b.gy) || (a.gx - b.gx); });
+  const cw = Math.min(1, Math.max(bw * 0.52, 4 / GRID));      /* 取景框宽：至少 1/3 画布 */
+  const ch = Math.min(1, Math.max(bh * 0.42, 4 / GRID));
+  const rects = picked.map(function (q) {
+    const cx = (q.gx + 0.5) / GRID, cy = (q.gy + 0.5) / GRID;
+    return {x: cx - cw / 2, y: cy - ch / 2, w: cw, h: ch};
+  });
+  if (rects.length < 2) {   /* 兜底：密度挑格失败就退回几何三格（保证不空手） */
+    rects.length = 0;
+    if (count === 3) {
+      rects.push({x: bx + bw * 0.18, y: by + bh * 0.25, w: bw * 0.64, h: bh * 0.42});
+      rects.push({x: bx, y: by + bh * 0.36, w: bw * 0.52, h: bh * 0.44});
+      rects.push({x: bx + bw * 0.40, y: by + bh * 0.55, w: bw * 0.60, h: bh * 0.42});
+    } else if (count === 2) {
+      rects.push({x: bx, y: by, w: bw * 0.5, h: bh});
+      rects.push({x: bx + bw * 0.5, y: by, w: bw * 0.5, h: bh});
+    } else {
+      for (let r = 0; r < 2; r++) for (let c = 0; c < 2; c++)
+        rects.push({x: bx + bw * (c * 0.5), y: by + bh * (r * 0.5), w: bw * 0.5, h: bh * 0.5});
+    }
   }
   const clamp = (r) => {
     const x = Math.max(0, Math.min(0.999, r.x)), y = Math.max(0, Math.min(0.999, r.y));
